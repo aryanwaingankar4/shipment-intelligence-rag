@@ -329,8 +329,3 @@ Baseline test (8 questions, top-3 hit rate):
 This project is for educational and demonstration purposes.
 
 ---
-
-## Contact
-
-For questions about the knowledge base documents, contact: quality@tracelink-biomed.com  
-GitHub: [aryanwaingankar4](https://github.com/aryanwaingankar4)
