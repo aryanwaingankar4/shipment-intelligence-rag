@@ -1,0 +1,212 @@
+# Project Status — Shipment Intelligence RAG
+
+> Living document. Update it at the end of every phase: what was built, what changed,
+> what's verified, and what's next. Newest phase at the top of the history section.
+
+| | |
+|---|---|
+| **Current version** | 0.2.0 |
+| **Current phase** | Phase 4 complete (productionization) → next: Phase 5 (security + first cloud deploy) |
+| **Last updated** | 2026-11-01 |
+| **Owner** | Aryan Waingankar |
+| **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
+
+---
+
+## 1. What this project is
+
+An AI assistant for a (fictional) pharmaceutical distributor. Staff ask natural-language
+questions about products, shipments, temperature breaches, vendors, incidents and GDP
+compliance; the system retrieves the relevant passages from company documents and has an
+LLM answer **only** from those passages, with citations, refusing anything out of scope.
+
+**Knowledge base** (`data/docs/`, 5 documents → 38 chunks):
+
+| File | Contents |
+|---|---|
+| `product_manual.txt` | 5 SKUs (cold chain, ambient, frozen) — storage, shelf life, packaging, excursion rules |
+| `compliance_guide.txt` | GDP SOP: documentation, temperature monitoring, warehouse, delays, recalls, penalties |
+| `shipment_log.txt` | 10 FY2024 shipments with temps, status, breaches |
+| `vendor_list.txt` | 4 vendors with SLAs, on-time rates, ratings, escalation matrix |
+| `incident_report_2024.txt` | RCA + CAPA for the 2 temperature breaches |
+
+## 2. Current architecture (v0.2.0)
+
+```
+Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──▶  Gemini (google-genai)
+                                               │
+                                     MiniLM embed → Chroma top-8 → cross-encoder rerank → top-3
+                                               │
+                                        ChromaDB server  ◀──  ingest job (incremental)
+```
+
+| Layer | Tech | Notes |
+|---|---|---|
+| Config | pydantic-settings | Every tunable is an env var (`.env.example`) |
+| Chunking | custom section splitter + LangChain recursive splitter | Content-hash chunk IDs |
+| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | 384-d, normalized, baked into image |
+| Vector DB | ChromaDB 1.5.9 | Embedded (dev) or HTTP server (Docker/prod) |
+| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | `MIN_RERANK_SCORE` = out-of-scope guardrail |
+| LLM | Gemini `gemini-2.5-flash` | tenacity retries on 408/429/5xx, 30 s timeout |
+| API | FastAPI + uvicorn | `/health`, `/ready`, `/v1/query`, request IDs, JSON logs |
+| UI | Streamlit | Thin client, HTML-escaped rendering, sources shown |
+| Packaging | Docker (API+ingest image, UI image), docker-compose | CPU torch, non-root, healthchecks |
+| CI | GitHub Actions | ruff → pytest → ingest + retrieval eval gate → docker builds |
+
+### How to run
+
+- Docker: `cp .env.example .env` (set `GEMINI_API_KEY`) → `docker compose up --build` → UI :8501, API :8080/docs
+- Local: see README "Local development"
+- Re-index after editing docs: `docker compose run --rm ingest` (or `shipment-rag ingest`)
+
+---
+
+## 3. Phase history
+
+### Phase 4 — Productionization (v0.2.0) — ✅ complete, 2026-11-01
+
+**Goal:** turn the Colab notebook into a codebase that deploys, scales and is maintained
+like a real service.
+
+What was done:
+- Split the 2,100-line notebook into a package `src/shipment_rag/` with one responsibility
+  per module (config, chunker, indexer, embeddings, vectorstore, retrieval, llm, pipeline, api, cli).
+- Moved the knowledge base out of Python strings into `data/docs/*.txt`.
+- New **FastAPI service**: models loaded once per process, typed request/response, liveness and
+  readiness probes, optional API-key auth, request-ID propagation, structured JSON logs.
+- **Streamlit UI is now a separate service** that calls the API (UI and API scale independently).
+- **Incremental ingestion**: re-running only embeds new/changed chunks, deletes removed ones.
+- **Docker + docker-compose**: Chroma server, one-shot ingest job, API, UI; CPU-only torch;
+  model weights baked in; non-root users; healthchecks; UI gets no LLM secret.
+- **Tests** (unit + API + indexer integration with in-memory Chroma) — no models or network needed.
+- **CI** on GitHub Actions including a retrieval-quality gate that fails the build if accuracy drops.
+- Original notebook preserved at `notebooks/shipment_chatbot_colab.py` for reference.
+
+Bugs / weaknesses fixed from the prototype:
+
+| # | Problem in notebook | Fix |
+|---|---|---|
+| 1 | Out-of-scope guard was dead code: retrieval always returns top-k, so `if not chunks` never fired and every question cost an LLM call | Cross-encoder score threshold (`MIN_RERANK_SCORE`); refuse before calling the LLM |
+| 2 | Day-3 retrieval read `meta["section"]` but chunks stored `section_name` → section always blank | Reads `section_name`; sections shown in prompt and API |
+| 3 | HTML injection: user and model text inserted into `unsafe_allow_html` unescaped | `html.escape` on all dynamic content |
+| 4 | Two `log_query` versions with different CSV schemas writing to the same file | Structured JSON audit log (`rag_query` events) to stdout |
+| 5 | Every ingestion deleted and rebuilt the whole collection | Content-hash IDs + incremental upsert/delete |
+| 6 | `google-generativeai` SDK is deprecated | Migrated to `google-genai` with native `system_instruction` |
+| 7 | Streamlit app duplicated the pipeline (and lacked the retry logic) | Single pipeline behind the API |
+| 8 | Hard-coded Drive paths, demo credentials, model names | Environment-based config |
+| 9 | Deployment = Colab + ngrok with CORS/XSRF disabled; dies when the Colab session ends | Containers that run anywhere |
+
+### Phase 3 — LLM integration + UI + demo deploy (Colab "Day 3") — ✅ complete
+
+- Gemini 2.5 Flash via Colab Secrets, retry with exponential backoff on 429/connection resets.
+- `query_rag()` grounded prompt + "I don't know" refusal string.
+- 3-question quota-lite eval (factual, multi-doc, out-of-scope).
+- Streamlit app "NexaChain BioMed / Nova": login, home dashboard, personalization, chat.
+- Launched from Colab through an ngrok tunnel. Screenshots in `screenshots/`.
+
+### Phase 2 — Retrieval pipeline (Colab "Day 2") — ✅ complete
+
+- 5 richer documents with `===` section headers.
+- Section-aware chunking (max 700 chars, 80 overlap) + rich metadata.
+- MiniLM embeddings, ChromaDB persisted on Google Drive, MD5 dedup.
+- 8-question retrieval test (keyword in top-3).
+- Cross-encoder rerank (top-8 → top-3); CSV query logging.
+
+### Phase 1 — Setup + mock data (Colab "Day 1") — ✅ complete
+
+- Colab + Drive folder structure, library install, 3 initial mock documents.
+
+---
+
+## 4. Verification (Phase 4)
+
+Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
+
+| Check | Result |
+|---|---|
+| `ruff check src tests ui` | ✅ clean |
+| `pytest` (19 tests: chunker, pipeline, API, indexer on in-memory Chroma) | ✅ 19/19 pass, ~1 s |
+| Real ingest (5 docs) | ✅ 38 chunks in 8.3 s; re-run → 0 added / 38 unchanged (incremental works) |
+| `shipment-rag eval` (10 in-scope + 2 out-of-scope, real models) | ✅ 12/12 = 100 % |
+| Guardrail margin | Off-topic questions score ≈ −11; in-scope top chunks ≥ −3 → threshold −6.0 has headroom |
+| API with real models: `/health`, `/ready` (38 chunks), missing key → 401, off-topic → refused in ~0.3 s without an LLM call, Gemini failure → clean 503 with no internal details leaked | ✅ |
+| Structured JSON audit + request logs with matching `request_id` | ✅ |
+| Streamlit UI (AppTest, stubbed API): bad login rejected, login, chat, `<script>` escaped, sources shown | ✅ |
+| `docker compose config` | ✅ valid (chroma, ingest, api, ui) |
+
+**Not yet verified:**
+- ⚠️ A real Gemini answer through the new `google-genai` client (no API key on this machine). First thing to do: put the key in `.env` and run `shipment-rag ask "Why was SH-2024-007 rejected?"`.
+- ⚠️ `docker compose up --build` (Docker Desktop wasn't running). CI builds both images on push.
+
+---
+
+## 5. Open decisions
+
+| # | Decision | Recommendation |
+|---|---|---|
+| D1 | **Brand mismatch**: docs say "TraceLink BioMed" (emails `@tracelink-biomed.com`), UI says "NexaChain BioMed". TraceLink is also the name of a real pharma supply-chain company. | Rename the documents to NexaChain BioMed so the bot persona and its knowledge agree, and the demo doesn't reference a real company's name. Re-run ingest afterwards. |
+| D2 | Where to host first | See Phase 5 options below. Cheapest credible path: one small VM + docker compose + Caddy (HTTPS). |
+| D3 | Gemini model lifetime | `gemini-2.5-flash` is the default; Google retires models regularly — check the model list before each release and change `GEMINI_MODEL`. |
+
+---
+
+## 6. Pending work / roadmap
+
+Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2** = later.
+
+### Phase 5 — Security + first real deployment (next)
+- [ ] **P0** Revoke the GitHub token currently embedded in the local git remote URL; use Git Credential Manager / `gh auth login` instead.
+- [ ] **P0** Replace the Streamlit demo login with real auth (OIDC/SSO via an auth proxy such as oauth2-proxy, or Streamlit's native `st.login`).
+- [ ] **P0** Set `API_KEYS` / `API_KEY` in every non-dev environment; store secrets in a secret manager, not `.env` on disk.
+- [ ] **P0** HTTPS in front of UI and API (Caddy / cloud load balancer). Don't expose Chroma publicly.
+- [ ] **P1** Push images to a registry (GHCR) from CI on `main`, tagged with the git SHA.
+- [ ] **P1** Pick a host and deploy:
+  - *Portfolio/demo*: single VM (GCP e2-medium / AWS Lightsail 4 GB) running `docker compose` + Caddy.
+  - *Company-style*: API + UI on Cloud Run / ECS Fargate / Azure Container Apps (stateless, autoscaling); vector DB as a managed or dedicated service (Chroma Cloud, Qdrant Cloud, or pgvector on managed Postgres); ingest as a scheduled job.
+- [ ] **P1** CD workflow: deploy on tag, smoke-test `/ready` + one query, auto-rollback on failure.
+- [ ] **P1** Rate limiting per API key (Redis-backed, e.g. `slowapi` or at the gateway) to protect Gemini quota.
+
+### Phase 6 — Observability + reliability
+- [ ] **P1** Metrics: Prometheus `/metrics` (latency histograms per stage, refusal rate, LLM errors, token usage) + Grafana dashboard.
+- [ ] **P1** Tracing: OpenTelemetry spans for embed / vector query / rerank / LLM.
+- [ ] **P1** Persist the audit log (`rag_query` events) to a database or log store for analytics and compliance audit.
+- [ ] **P2** LLM fallback model (e.g. `gemini-2.5-flash-lite`) when the primary returns 429/5xx.
+- [ ] **P2** Response cache for repeated questions (keyed on normalized question + index version).
+- [ ] **P2** Alerting on error-rate and p95 latency SLOs.
+
+### Phase 7 — Scale
+- [ ] **P1** Lock file for reproducible builds (`uv lock` / pip-tools).
+- [ ] **P2** Ingestion as a queue-driven worker (upload → queue → embed) instead of a one-shot job; support PDF/DOCX (pypdf already proven in Phase 2).
+- [ ] **P2** Stream answers (SSE) for faster perceived latency.
+- [ ] **P2** Move embeddings/reranker to a dedicated inference service or GPU if QPS grows; or use a hosted embedding API.
+- [ ] **P2** Multi-tenant: one collection (or metadata filter) per customer, tenant ID from auth.
+- [ ] **P2** Load test (k6/Locust) and document capacity per API replica.
+
+### Phase 8 — Answer quality
+- [ ] **P1** Generation eval: grow `data/eval/` into a golden Q&A set and score faithfulness / answer correctness (e.g. RAGAS or LLM-as-judge), run nightly — not on every PR, to save quota.
+- [ ] **P1** Tune `MIN_RERANK_SCORE` on a larger set of in-scope vs out-of-scope questions.
+- [ ] **P2** Hybrid search (BM25 + vectors) — IDs like `SH-2024-003` and `BATCH-FRZ-2403` match better lexically.
+- [ ] **P2** Metadata filters (product code, shipment ID, date) extracted from the question.
+- [ ] **P2** Structured data path: shipment log as a table (SQL tool) for aggregate questions ("how many breaches in Q1?").
+- [ ] **P2** Conversation memory (follow-up questions) with query rewriting.
+
+### Phase 9 — Product features
+- [ ] **P2** Clickable citations that open the source section.
+- [ ] **P2** Thumbs up/down feedback stored with the request ID, feeding the eval set.
+- [ ] **P2** Admin page: upload/replace documents, trigger re-index, view usage.
+- [ ] **P2** Role-based access (QA vs warehouse vs vendor views).
+
+---
+
+## 7. Decision log
+
+| Date | Decision | Why |
+|---|---|---|
+| 2026-11-01 | Separate UI and API services | Independent scaling and deploys; the API can serve other clients (Slack bot, mobile) |
+| 2026-11-01 | Chroma in server mode for Docker/prod, embedded for dev | Multiple API replicas need a shared index; dev stays zero-setup |
+| 2026-11-01 | Content-hash chunk IDs | Idempotent, incremental ingestion; safe to run on every deploy |
+| 2026-11-01 | Bake model weights into the image | No runtime downloads, faster cold starts, reproducible |
+| 2026-11-01 | Retrieval-only eval gate in CI | Catches retrieval regressions on every PR without spending LLM quota |
+| 2026-11-01 | Reranker score threshold as out-of-scope guardrail | Refuses obvious off-topic questions with zero LLM cost |
+| Phase 3 | Gemini 2.5 Flash, temperature 0.1 | Free tier for prototyping, low temperature for factual answers |
+| Phase 2 | Section-aware chunking | Keeps each product/shipment/SOP record intact → higher retrieval precision |

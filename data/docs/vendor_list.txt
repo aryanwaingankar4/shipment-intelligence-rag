@@ -1,0 +1,53 @@
+=== VENDOR & SUPPLIER LIST — TRACELINK BIOMED ===
+Document ID: DOC-VL-2024 | Version: 2.2 | Procurement contact: procurement@tracelink-biomed.com
+
+=== VENDOR V-001 — MedSupply India Pvt Ltd ===
+Vendor code: V-001
+Name: MedSupply India Pvt Ltd
+Location: Pune, Maharashtra
+Supplies: TL-COLD-9001, TL-COLD-9015 (cold chain pharmaceuticals)
+Contact person: Anil Deshmukh | Phone: +91-20-2550-3300 | Email: anil@medsupply.in
+SLA delivery window: 48 hours within Maharashtra, 72 hours outside
+On-time delivery rate FY2024: 96%
+Quality rating: A (audited Mar-2024)
+Cold chain certified: Yes (WHO PQS compliant)
+
+=== VENDOR V-002 — Deccan Pharma Logistics ===
+Vendor code: V-002
+Name: Deccan Pharma Logistics
+Location: Pune, Maharashtra
+Supplies: TL-DRY-4402, TL-DRY-4410 (ambient pharmaceuticals)
+Contact person: Sunita Rao | Phone: +91-20-2660-7788 | Email: sunita@deccanpharma.in
+SLA delivery window: 72 hours nationwide
+On-time delivery rate FY2024: 91%
+Quality rating: B+ (audited Jan-2024)
+Cold chain certified: Not required (ambient only)
+
+=== VENDOR V-003 — ArcticLine Cold Logistics ===
+Vendor code: V-003
+Name: ArcticLine Cold Logistics
+Location: Mumbai, Maharashtra
+Supplies: TL-FROZ-7700 (frozen biological)
+Contact person: Rohan Mehta | Phone: +91-22-4012-9090 | Email: rohan@arcticline.in
+SLA delivery window: 36 hours for dry-ice frozen shipments
+On-time delivery rate FY2024: 88%
+Quality rating: A- (audited Feb-2024)
+Cold chain certified: Yes (dry ice / -20°C specialist)
+Note: ArcticLine handled the rejected shipment SH-2024-007; corrective action under review.
+
+=== VENDOR V-004 — SafeMove Transport Services ===
+Vendor code: V-004
+Name: SafeMove Transport Services
+Location: Pune, Maharashtra
+Supplies: Last-mile refrigerated transport (all cold chain SKUs)
+Contact person: Imran Shaikh | Phone: +91-20-2780-1212 | Email: ops@safemove.in
+SLA delivery window: same-day within Pune, next-day within 300 km
+On-time delivery rate FY2024: 94%
+Quality rating: A (audited Apr-2024)
+Cold chain certified: Yes (validated reefer fleet)
+
+=== VENDOR ESCALATION MATRIX ===
+Level 1 (delay under 24h): handled by assigned vendor contact person.
+Level 2 (delay 24-48h): escalate to TraceLink procurement lead, procurement@tracelink-biomed.com.
+Level 3 (delay over 48h or any temperature breach): escalate to QA head, quality@tracelink-biomed.com, plus written deviation.
+Any vendor with on-time rate below 90% for two consecutive quarters is placed on a probation review.

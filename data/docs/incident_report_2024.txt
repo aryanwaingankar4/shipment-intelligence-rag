@@ -1,0 +1,31 @@
+=== INCIDENT REPORT FY2024 — TEMPERATURE BREACHES ===
+Document ID: DOC-IR-2024 | Version: 1.0 | Prepared by: QA Department, TraceLink BioMed.
+Scope: Root cause analysis of the two temperature breaches recorded in FY2024.
+
+=== INCIDENT INC-2024-01 — SH-2024-003 QUARANTINE ===
+Related shipment: SH-2024-003 | Product: TL-COLD-9001 | Batch: BATCH-CRY-2401
+Event: Cold chain consignment to Fortis Hospital Hyderabad reached 11.2°C, exceeding the 10°C limit for 3 hours.
+Detection: Data logger alarm flagged on arrival scan, Feb 7.
+Root cause: PCM cold packs were not fully conditioned (frozen) before loading; transit took 4 hours longer than planned due to a highway diversion.
+Contributing factor: No backup cold box was available at the transfer point.
+Immediate action: Consignment quarantined, QA notified within 2 hours, deviation DEV-2024-003 raised.
+Disposition: Pending QA stability assessment; product not released.
+CAPA: Mandatory 24-hour PCM conditioning checklist before loading; add GPS route alerts for cold chain trucks.
+Status: CAPA in progress, target closure Q3 FY2024.
+
+=== INCIDENT INC-2024-02 — SH-2024-007 REJECTION ===
+Related shipment: SH-2024-007 | Product: TL-FROZ-7700 | Batch: BATCH-FRZ-2403
+Event: Frozen biological consignment to SciLab Research Kolkata rose to -8°C, above the -10°C automatic rejection threshold.
+Detection: Logger review on arrival, Apr 9.
+Root cause: Insufficient dry ice loaded for a 2-day transit; dry ice fully sublimated before delivery.
+Contributing factor: Vendor ArcticLine used a standard insulated case instead of the specified extended-duration case.
+Immediate action: Full batch rejected automatically, destruction record DES-2024-007 raised, CDSCO notified within 72 hours.
+Disposition: Destroyed per protocol; no product released.
+CAPA: Dry ice quantity formula revised to 1.5x transit hours; mandatory extended-duration cases for transit over 24 hours; ArcticLine corrective action audit scheduled.
+Status: CAPA open, vendor audit pending.
+
+=== INCIDENT TREND ANALYSIS FY2024 ===
+Both breaches involved temperature-sensitive products on multi-day transit.
+Common theme: thermal packaging not matched to actual transit duration.
+Breach rate fell within tolerance after CAPA rollout in the second half of the year.
+Recommendation: Pre-shipment thermal validation for any cold chain or frozen route exceeding 24 hours.

@@ -1,0 +1,58 @@
+# Full stack on one machine:   docker compose up --build
+# Scale the API:               docker compose up --scale api=3   (remove the api port mapping first,
+#                                                                 or put a reverse proxy in front)
+# Re-index after editing docs: docker compose run --rm ingest
+
+x-app-env: &app-env
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    CHROMA_HOST: chroma
+    CHROMA_PORT: "8000"
+
+services:
+  chroma:
+    image: chromadb/chroma:1.5.9  # must match the chromadb client pin in pyproject.toml
+    volumes:
+      - chroma-data:/data
+    restart: unless-stopped
+
+  ingest:
+    build: .
+    <<: *app-env
+    command: ["shipment-rag", "ingest"]
+    volumes:
+      - ./data/docs:/app/data/docs:ro
+    depends_on:
+      - chroma
+    restart: "no"
+
+  api:
+    build: .
+    <<: *app-env
+    ports:
+      - "8080:8080"
+    depends_on:
+      ingest:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  ui:
+    build: ./ui
+    # only what the UI needs — it never sees the Gemini key
+    environment:
+      API_URL: http://api:8080
+      API_KEY: ${API_KEY:-}
+      UI_USERNAME: ${UI_USERNAME:-demo}
+      UI_PASSWORD: ${UI_PASSWORD:-demo123}
+      SHOW_DEMO_HINT: ${SHOW_DEMO_HINT:-true}
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
