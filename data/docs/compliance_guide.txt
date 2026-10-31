@@ -1,4 +1,4 @@
-=== GDP COMPLIANCE GUIDE — TRACELINK BIOMED ===
+=== GDP COMPLIANCE GUIDE — NEXACHAIN BIOMED ===
 Document ID: DOC-CG-2024 | Version: 4.0 | Based on WHO GDP and CDSCO guidelines.
 
 === SECTION 1 — SHIPMENT DOCUMENTATION ===
@@ -34,7 +34,7 @@ If a delay is caused by vehicle breakdown, a backup validated vehicle must be di
 Returns are accepted only within 30 days of delivery.
 Returned products are quarantined and cannot be restocked without QA approval.
 In a recall, affected batches must be identified within 4 hours.
-The distribution list is retrieved from the TraceLink traceability system.
+The distribution list is retrieved from the NexaChain traceability system.
 CDSCO must be notified within 72 hours of a confirmed recall.
 
 === SECTION 6 — PENALTIES ===

@@ -48,6 +48,14 @@ def test_long_sections_are_sub_split_and_keep_section_name():
     assert {c.metadata["section_name"] for c in chunks} == {"BIG SECTION"}
 
 
+def test_knowledge_base_uses_fictional_brand_only():
+    # D1: the docs must not reference the real company TraceLink
+    for doc in load_documents(DOCS):
+        assert "tracelink" not in doc.text.lower(), doc.source
+    manual = (DOCS / "product_manual.txt").read_text(encoding="utf-8")
+    assert "quality@nexachain-biomed.com" in manual
+
+
 def test_repo_knowledge_base_chunks_cleanly():
     docs = load_documents(DOCS)
     assert {d.source for d in docs} >= {"product_manual.txt", "shipment_log.txt"}

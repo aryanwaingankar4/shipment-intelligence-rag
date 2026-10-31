@@ -5,8 +5,9 @@
 
 | | |
 |---|---|
-| **Current version** | 0.2.0 |
-| **Current phase** | Phase 4 complete (productionization) → next: Phase 5 (security + first cloud deploy) |
+| **Current version** | 0.2.1 |
+| **Current phase** | Stage 0 done (git cleanup + Phase 4 close-out) → next: Stage 1 hybrid search |
+| **Branch** | `phase-4-productionization` (not yet reconciled with `origin/main`, see §5 D4) |
 | **Last updated** | 2026-11-01 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -63,6 +64,45 @@ Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──
 
 ## 3. Phase history
 
+### Work plan (agreed 2026-11-01)
+
+Goal: a live demo plus measurable ML improvements for AI/ML placement interviews.
+Deliberately **out of scope for now**: Prometheus/Grafana, OpenTelemetry, multi-tenancy,
+queue-based ingestion.
+
+| Stage | Scope | Status |
+|---|---|---|
+| 0 | Git cleanup + Phase 4 close-out (D1 rename, live checks) | ✅ done (live Gemini + Docker checks pending, see §4) |
+| 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ⏳ next |
+| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), nightly workflow | ⬜ |
+| 3 | Structured query path for aggregate shipment questions + router | ⬜ |
+| 4 | SSE streaming + follow-up questions (query rewriting) | ⬜ |
+| 5 | Real login, rate limiting, GHCR images, VM + Caddy deploy, CD | ⬜ (ask before spending money) |
+
+### Stage 0 — Git cleanup + Phase 4 close-out (v0.2.1) — ✅ complete, 2026-11-01
+
+- Remote URL no longer embeds a token; `gh auth login` used (done by owner).
+- Inspected divergence: `origin/main` has 7 web-UI commits (screenshots in `assets/`
+  under clean names, a 336-line Colab-era README, an empty `assets/placeholder.md`);
+  local `main` has 1 commit adding the **byte-identical** screenshots under `screenshots/`.
+- All Phase 4 work committed on branch `phase-4-productionization`; audited that no `.env`,
+  `.venv`, Chroma DB, model weights, logs or secrets are tracked. Added `.gitattributes`
+  (LF line endings, so files used inside Linux containers aren't converted to CRLF on Windows).
+- **D1 resolved:** "TraceLink BioMed" → "NexaChain BioMed" across `data/docs/*` incl. email
+  domain `@nexachain-biomed.com` (13 occurrences). SKU codes (`TL-COLD-9001` …) kept as
+  product IDs. New unit test guards against the old name returning.
+- Incremental re-index after the rename: 12 chunks replaced, 26 untouched.
+
+**Found during close-out (baseline cases for Stage 1):**
+
+| Question | Problem |
+|---|---|
+| "Which email should I use to escalate a temperature breach to the QA head?" | **Recall miss** — the `VENDOR ESCALATION MATRIX` chunk is not in the vector top-8 at all; breach/incident chunks crowd it out |
+| "What is the quality contact email for CoA requests?" | Correct chunk is rank 1 but scores −6.54, **below `MIN_RERANK_SCORE` −6.0** → would be wrongly refused. The Phase 4 margin check only covered strong in-scope questions |
+
+These were kept out of the CI-gated set for now so the original 12 remain a clean
+before/after comparison; they go into the Stage 1 expanded eval.
+
 ### Phase 4 — Productionization (v0.2.0) — ✅ complete, 2026-11-01
 
 **Goal:** turn the Colab notebook into a codebase that deploys, scales and is maintained
@@ -118,7 +158,21 @@ Bugs / weaknesses fixed from the prototype:
 
 ---
 
-## 4. Verification (Phase 4)
+## 4. Verification
+
+### Stage 0 (v0.2.1) — 2026-11-01
+
+| Check | Result |
+|---|---|
+| `ruff check src tests ui` | ✅ clean |
+| `pytest` | ✅ 20/20 (new: brand-name guard) |
+| Re-ingest after rename | ✅ 38 chunks; 12 replaced / 26 unchanged |
+| `shipment-rag eval` (12 cases) | ✅ 12/12 = 100 % — unchanged by rename, top rerank scores within ±0.2 of before |
+| Staged-file audit (no `.env`, `.venv`, `chroma_db`, weights, logs, secrets) | ✅ |
+| Live Gemini answer (`shipment-rag ask …`) | ⏸ not run — no `.env` / `GEMINI_API_KEY` on this machine |
+| `docker compose up --build` + `/ready` + one query | ⏸ not run — Docker Desktop not running |
+
+### Phase 4 (v0.2.0)
 
 Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 
@@ -144,8 +198,9 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 
 | # | Decision | Recommendation |
 |---|---|---|
-| D1 | **Brand mismatch**: docs say "TraceLink BioMed" (emails `@tracelink-biomed.com`), UI says "NexaChain BioMed". TraceLink is also the name of a real pharma supply-chain company. | Rename the documents to NexaChain BioMed so the bot persona and its knowledge agree, and the demo doesn't reference a real company's name. Re-run ingest afterwards. |
+| D1 | ~~Brand mismatch (docs "TraceLink BioMed" vs UI "NexaChain BioMed")~~ | ✅ **Resolved in Stage 0** — docs renamed to NexaChain BioMed |
 | D2 | Where to host first | See Phase 5 options below. Cheapest credible path: one small VM + docker compose + Caddy (HTTPS). |
+| D4 | **Reconcile with `origin/main`** (diverged: 1 local / 7 remote commits) | Rebase this branch onto `origin/main`, drop local commit `aa4e065` (duplicate screenshots), point README at `assets/*.png`, carry the remote README's useful parts (example queries, 7/8 notebook baseline) into the new README; then PR → fast-forward `main`. **Awaiting owner approval.** |
 | D3 | Gemini model lifetime | `gemini-2.5-flash` is the default; Google retires models regularly — check the model list before each release and change `GEMINI_MODEL`. |
 
 ---
@@ -155,7 +210,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2** = later.
 
 ### Phase 5 — Security + first real deployment (next)
-- [ ] **P0** Revoke the GitHub token currently embedded in the local git remote URL; use Git Credential Manager / `gh auth login` instead.
+- [x] **P0** Remove the GitHub token embedded in the local git remote URL; use `gh auth login` instead. *(done by owner, Stage 0)*
 - [ ] **P0** Replace the Streamlit demo login with real auth (OIDC/SSO via an auth proxy such as oauth2-proxy, or Streamlit's native `st.login`).
 - [ ] **P0** Set `API_KEYS` / `API_KEY` in every non-dev environment; store secrets in a secret manager, not `.env` on disk.
 - [ ] **P0** HTTPS in front of UI and API (Caddy / cloud load balancer). Don't expose Chroma publicly.
@@ -202,6 +257,9 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-01 | Rename brand to NexaChain BioMed in docs; keep `TL-` SKU codes | Persona and knowledge agree; no real company referenced. SKUs are IDs used across shipments/eval |
+| 2026-11-01 | Keep newly found failing retrieval cases out of the CI gate until Stage 1 | Keeps the original 12-case set as a clean baseline; failures are documented, not hidden |
+| 2026-11-01 | `.gitattributes` with `eol=lf` | Repo developed on Windows, run in Linux containers |
 | 2026-11-01 | Separate UI and API services | Independent scaling and deploys; the API can serve other clients (Slack bot, mobile) |
 | 2026-11-01 | Chroma in server mode for Docker/prod, embedded for dev | Multiple API replicas need a shared index; dev stays zero-setup |
 | 2026-11-01 | Content-hash chunk IDs | Idempotent, incremental ingestion; safe to run on every deploy |

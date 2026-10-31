@@ -1,5 +1,5 @@
 === INCIDENT REPORT FY2024 — TEMPERATURE BREACHES ===
-Document ID: DOC-IR-2024 | Version: 1.0 | Prepared by: QA Department, TraceLink BioMed.
+Document ID: DOC-IR-2024 | Version: 1.0 | Prepared by: QA Department, NexaChain BioMed.
 Scope: Root cause analysis of the two temperature breaches recorded in FY2024.
 
 === INCIDENT INC-2024-01 — SH-2024-003 QUARANTINE ===

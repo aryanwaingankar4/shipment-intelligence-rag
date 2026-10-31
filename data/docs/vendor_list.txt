@@ -1,5 +1,5 @@
-=== VENDOR & SUPPLIER LIST — TRACELINK BIOMED ===
-Document ID: DOC-VL-2024 | Version: 2.2 | Procurement contact: procurement@tracelink-biomed.com
+=== VENDOR & SUPPLIER LIST — NEXACHAIN BIOMED ===
+Document ID: DOC-VL-2024 | Version: 2.2 | Procurement contact: procurement@nexachain-biomed.com
 
 === VENDOR V-001 — MedSupply India Pvt Ltd ===
 Vendor code: V-001
@@ -48,6 +48,6 @@ Cold chain certified: Yes (validated reefer fleet)
 
 === VENDOR ESCALATION MATRIX ===
 Level 1 (delay under 24h): handled by assigned vendor contact person.
-Level 2 (delay 24-48h): escalate to TraceLink procurement lead, procurement@tracelink-biomed.com.
-Level 3 (delay over 48h or any temperature breach): escalate to QA head, quality@tracelink-biomed.com, plus written deviation.
+Level 2 (delay 24-48h): escalate to NexaChain procurement lead, procurement@nexachain-biomed.com.
+Level 3 (delay over 48h or any temperature breach): escalate to QA head, quality@nexachain-biomed.com, plus written deviation.
 Any vendor with on-time rate below 90% for two consecutive quarters is placed on a probation review.
