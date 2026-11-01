@@ -18,7 +18,7 @@ RERANKERS = {
     "MiniLM-L6": "cross-encoder/ms-marco-MiniLM-L-6-v2",
     "MiniLM-L12": "cross-encoder/ms-marco-MiniLM-L-12-v2",
 }
-THRESHOLDS = [-6.0, -9.0, -10.0, -10.5, -10.9, -11.0, None]
+THRESHOLDS = [-6.0, -9.0, -10.0, -10.25, -10.5, -10.9, -11.0, None]
 
 
 class CandidateOrder:

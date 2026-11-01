@@ -20,6 +20,7 @@ Eval set: `data/eval/retrieval_eval.json`.
 | MiniLM-L6, MIN_RERANK_SCORE=-6.0 | 81% | 100% | 30% | 0.777 | 98% | 8 | 100% |
 | MiniLM-L6, MIN_RERANK_SCORE=-9.0 | 85% | 100% | 40% | 0.819 | 98% | 4 | 100% |
 | MiniLM-L6, MIN_RERANK_SCORE=-10.0 | 87% | 100% | 50% | 0.840 | 98% | 1 | 100% |
+| MiniLM-L6, MIN_RERANK_SCORE=-10.25 | 89% | 100% | 60% | 0.851 | 98% | 1 | 100% |
 | MiniLM-L6, MIN_RERANK_SCORE=-10.5 | 91% | 100% | 70% | 0.858 | 98% | 1 | 100% |
 | MiniLM-L6, MIN_RERANK_SCORE=-10.9 | 91% | 100% | 70% | 0.858 | 98% | 0 | 100% |
 | MiniLM-L6, MIN_RERANK_SCORE=-11.0 | 91% | 100% | 70% | 0.858 | 98% | 0 | 100% |
@@ -28,6 +29,7 @@ Eval set: `data/eval/retrieval_eval.json`.
 | MiniLM-L12, MIN_RERANK_SCORE=-6.0 | 83% | 95% | 40% | 0.816 | 98% | 7 | 100% |
 | MiniLM-L12, MIN_RERANK_SCORE=-9.0 | 85% | 95% | 40% | 0.837 | 98% | 5 | 100% |
 | MiniLM-L12, MIN_RERANK_SCORE=-10.0 | 87% | 95% | 50% | 0.858 | 98% | 3 | 100% |
+| MiniLM-L12, MIN_RERANK_SCORE=-10.25 | 89% | 95% | 60% | 0.879 | 98% | 2 | 100% |
 | MiniLM-L12, MIN_RERANK_SCORE=-10.5 | 89% | 95% | 60% | 0.879 | 98% | 1 | 100% |
 | MiniLM-L12, MIN_RERANK_SCORE=-10.9 | 89% | 95% | 60% | 0.879 | 98% | 0 | 100% |
 | MiniLM-L12, MIN_RERANK_SCORE=-11.0 | 89% | 95% | 60% | 0.879 | 98% | 0 | 100% |

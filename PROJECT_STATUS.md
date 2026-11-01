@@ -5,9 +5,9 @@
 
 | | |
 |---|---|
-| **Current version** | 0.3.0 |
+| **Current version** | 0.3.1 |
 | **Current phase** | Stage 1 done (hybrid search) — awaiting review → next: Stage 2 generation eval |
-| **Branches** | `phase-4-productionization` → PR #1 (open, CI green); `stage-1-hybrid-search` (on top of it, local) |
+| **Branches** | PR #1 merged into `main`; `stage-1-hybrid-search` → PR #2 (open for review) |
 | **Last updated** | 2026-11-01 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -38,7 +38,7 @@ Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──
                                                │
                         ┌── MiniLM embed → Chroma top-8 ──┐
                  query ─┤                                 ├─ RRF → 12 → cross-encoder → top-3
-                        └── BM25 (in-memory) top-8 ───────┘          (junk filter −10.9)
+                        └── BM25 (in-memory) top-8 ───────┘          (junk filter −10.25)
                                                │
                                         ChromaDB server  ◀──  ingest job (incremental)
 ```
@@ -51,7 +51,7 @@ Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──
 | Vector DB | ChromaDB 1.5.9 | Embedded (dev) or HTTP server (Docker/prod) |
 | Lexical | `rank-bm25` (BM25Okapi), ID-aware tokenizer | Built in memory from Chroma at first query, rebuilt when the chunk count changes |
 | Fusion | Reciprocal rank fusion (k=60) | `RETRIEVAL_MODE=vector\|bm25\|hybrid` (default hybrid) |
-| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | `MIN_RERANK_SCORE=-10.9` filters obvious junk; not a refusal guarantee |
+| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | `MIN_RERANK_SCORE=-10.25` (chosen on a held-out split) filters obvious junk; not a refusal guarantee |
 | LLM | Gemini `gemini-3.8-flash`, thinking level `low`, 2048 max output tokens | tenacity retries on 408/429/5xx, 30 s timeout, warns on `MAX_TOKENS`, fails fast on model 404 |
 | API | FastAPI + uvicorn | `/health`, `/ready`, `/v1/query`, request IDs, JSON logs |
 | UI | Streamlit | Thin client, HTML-escaped rendering, sources shown |
@@ -106,43 +106,58 @@ queue-based ingestion.
 - `scripts/retrieval_experiments.py`: reranker ablation + threshold sweep, committed as
   `data/eval/reports/stage1_experiments.md`.
 
-**Before → after** (same 58 questions, same index and models; reports in `data/eval/reports/`)
+**Where the gains come from: leave-one-out at the final config** (hybrid, section headers,
+cutoff −10.25; same 58 questions, index and models; reports in `data/eval/reports/`)
 
-| Metric | Phase 4 baseline (vector, −6) | + hybrid | + section headers | + threshold −10.9 (final) |
-|---|---|---|---|---|
-| hit@3, all in-scope (47) | 74% | 79% | 81% | **91%** |
-| hit@3, ID-heavy (20) | 90% | 95% | 100% | **100%** |
-| hit@3, paraphrased (10) | 30% | 30% | 30% | **70%** |
-| MRR@3 | 0.734 | 0.777 | 0.777 | **0.858** |
-| candidate recall | 94% | 98% | 98% | **98%** |
-| false refusals | 8 | 8 | 8 | **0** |
-| off-domain refused | 100% | 100% | 100% | 100% |
+| Change (final ← alternative) | hit@3 all (47) | ID-heavy (20) | paraphrased (10) | MRR@3 | candidate recall | wrongly refused |
+|---|---|---|---|---|---|---|
+| **Final** | **42/47** | **20/20** | **6/10** | **0.851** | **46/47** | **1** |
+| hybrid ← vector-only | 40/47 | 19/20 | 6/10 | 0.809 | 44/47 | 1 |
+| hybrid ← BM25-only | 40/47 | 20/20 | 4/10 | 0.830 | 41/47 | 4 |
+| section headers ← off | 41/47 | 19/20 | 6/10 | 0.851 | 46/47 | 1 |
+| cutoff −10.25 ← −6 | 38/47 | 20/20 | 3/10 | 0.777 | 46/47 | 8 |
 
-Final config, vector vs hybrid (only `RETRIEVAL_MODE` differs): hit@3 87% → 91%,
-ID-heavy 95% → 100%, MRR 0.816 → 0.858, candidate recall 94% → 98%.
+Hybrid vs vector, all else equal: **40 → 42 of 47** (85% → 89%), MRR 0.809 → 0.851.
+The cutoff fix is the largest single change (38 → 42, paraphrases 3/10 → 6/10, wrongly
+refused 8 → 1). Baseline → final, all three changes together: 35/47 → 42/47, paraphrases
+3/10 → 6/10, MRR 0.734 → 0.851. The remaining wrongly refused question has no relevant
+candidate, so it would be a miss anyway.
 
 **What the experiments showed**
 1. *The first 48-question run was misleading.* BM25 alone matched hybrid on hit@3 and beat it
    on MRR. The cause was the eval set: questions written from the documents share their
    vocabulary, which favours lexical search. Adding a paraphrase slice exposed the
-   difference. BM25 gets 40% on paraphrases and finds no candidates at all for some;
-   vector gets 70–80%.
-2. *Hybrid's value is candidate recall* (vector 94%, BM25 87%, hybrid 98%): the two
+   difference. BM25 gets 4/10 on paraphrases and finds no candidates at all for some.
+2. *Hybrid's value is candidate recall* (vector 44/47, BM25 41/47, hybrid 46/47): the two
    retrievers fail on different questions.
-3. *The cross-encoder is the bottleneck for paraphrases.* With no threshold it raises MRR
-   (RRF order 0.766 → 0.858) and ID accuracy (95% → 100%), but scores colloquial questions
-   very low (−9 to −10.7) and does slightly worse than plain RRF order on them (70% vs 80%).
-   `ms-marco-MiniLM-L12` was not better (89% hit@3, ID-heavy 95%), so L6 stays.
-4. *The −6 / −9 thresholds were wrongly refusing real questions.* At −6, 8 of 47 in-scope
-   questions were refused. Swept −6 … −11: −10.9 is the highest value with zero false
-   refusals that still refuses all off-domain questions before the LLM. The margin on the
-   off-domain side is only ~0.24, and it was tuned on the same set it is reported on.
-5. One small regression from section headers: `TL-COLD-9001` storage moved from rank 1 to
+3. *The cross-encoder is the bottleneck for paraphrases.* With no cutoff it raises MRR
+   (RRF order 0.766 → 0.858) and ID accuracy (19/20 → 20/20), but scores colloquial
+   questions very low (−9 to −10.7) and does slightly worse than plain RRF order on them
+   (7/10 vs 8/10). `ms-marco-MiniLM-L12` was mixed: same hit@3, better MRR (0.887 vs 0.858),
+   worse on IDs (19/20); L6 stays.
+4. *The cutoff was refusing real questions, and is now chosen on held-out data.* At −6, 8 of
+   47 answerable questions were refused. `shipment-rag tune-threshold` picks the cutoff on a
+   fixed, stratified tune half (30 questions) and reports on the test half (28). Tune half:
+   weakest answerable −9.24, strongest off-domain −11.25 → **−10.25** (margin 1.0). Test
+   half: 0/23 answerable refused, 3/3 off-domain refused. Caveats: only 3 off-domain test
+   questions, and all 4 retrieval failures happened to land in the tune half, so the test
+   half's 23/23 hit@3 says nothing about retrieval quality, only about the cutoff.
+5. *Tuning on your own test set looks better than it is.* The earlier −10.9, chosen on the
+   full set, scored 43/47 on that same set. −10.25 scores 42/47 because a cutoff also prunes
+   lower-ranked chunks: one paraphrase's correct passage (rank 2) scores just under it. The
+   tuning rule only counts refusals, not pruned answers; including those is a possible
+   refinement, but it must be decided on the tune half only.
+6. One small regression from section headers: `TL-COLD-9001` storage moved from rank 1 to
    rank 2 (both halves of that product section now carry its ID). Still in the top 3.
 
 **Still failing (final config):** "Which vendor had the lowest on-time rate?" needs all four
-vendor records (Stage 3); 2 paraphrases ranked outside the top 3 and 1 with no relevant
-candidate.
+vendor records (Stage 3); 4 paraphrases (D5: LLM query rewriting in Stage 4).
+
+**Review follow-ups (v0.3.1, same PR):** gains attributed per change, all else equal
+(table above); results shown as counts; cutoff tuned on a held-out split
+(`tune-threshold`, `--split tune|test`); `data/eval/user_paraphrases.json` for
+owner-written paraphrases (tagged `paraphrase` + `user`, included automatically, reported
+as their own row).
 
 ### Stage 0.5 — Live-check fixes (v0.2.2) — ✅ complete, 2026-11-01
 
@@ -256,17 +271,19 @@ Bugs / weaknesses fixed from the prototype:
 
 ## 4. Verification
 
-### Stage 1 (v0.3.0) — 2026-11-01
+### Stage 1 (v0.3.0 + review follow-ups v0.3.1) — 2026-11-01
 
 | Check | Result |
 |---|---|
 | `ruff check src tests ui scripts` | ✅ clean |
-| `pytest` | ✅ 58/58 (new: 8 hybrid-retrieval tests on a fake store, 3 eval tests — case kinds, `expect_all`, metrics — and 1 section-header chunker test) |
-| `shipment-rag eval --mode all` (58 q), final config | ✅ gate 92% (hybrid) ≥ 90%; vector 89%, BM25 87% |
+| `pytest` | ✅ 62/62 (Stage 1: 8 hybrid-retrieval tests on a fake store, 1 section-header chunker test, 7 eval tests: case kinds, `expect_all`, metrics, multi-file + default tags + dedup, stratified deterministic splits, threshold choice with and without overlapping scores) |
+| `shipment-rag eval --mode all` (58 q), final config | ✅ gate 91% (hybrid) ≥ 90%; vector 87%, BM25 87% |
+| `shipment-rag tune-threshold` | ✅ −10.25 chosen on tune (30 q); test (28 q): 0/23 wrongly refused, 3/3 off-domain refused |
 | `shipment-rag eval --file data/eval/notebook_eval_8.json` | ✅ 8/8 |
-| Ablation reports regenerated from committed code | ✅ `data/eval/reports/stage1_{a,b,c}_*.md`, `stage1_experiments.md` |
+| Leave-one-out reports regenerated from committed code | ✅ `data/eval/reports/stage1_{a,b,c,d}_*.md`, `stage1_threshold_holdout.md`, `stage1_experiments.md` |
 | `scan_secrets.py --all` | ✅ clean |
-| Determinism: no-headers run repeated | ✅ identical metrics on both runs |
+| Determinism: identical metrics on repeated runs | ✅ |
+| Rebased onto `main` after PR #1 merge (merge commit `71ecd0a`) | ✅ tree unchanged by the rebase |
 
 ### Stage 0.5 (v0.2.2) — 2026-11-01
 
@@ -365,8 +382,10 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 ### Phase 8 — Answer quality
 - [ ] **P1** Generation eval: grow `data/eval/` into a golden Q&A set and score faithfulness / answer correctness (e.g. RAGAS or LLM-as-judge), run nightly — not on every PR, to save quota.
-- [x] **P1** Tune `MIN_RERANK_SCORE` on a larger set of in-scope vs out-of-scope questions. *(Stage 1: −10.9)*
-- [ ] **P1** Re-validate `MIN_RERANK_SCORE` on held-out questions (Stage 2 golden set); it was tuned on the reported set.
+- [x] **P1** Tune `MIN_RERANK_SCORE` on a larger set of in-scope vs out-of-scope questions. *(Stage 1: −10.25, tuned on the tune split, checked on the test split)*
+- [x] **P1** Choose `MIN_RERANK_SCORE` on held-out data. *(Stage 1 review: `tune-threshold`)*
+- [ ] **P2** Grow the off-domain slice (only 3 per split) and re-run `tune-threshold`; consider counting pruned answers in the tuning rule.
+- [ ] **P1** Add the owner's paraphrased questions to `data/eval/user_paraphrases.json` and re-run eval + `tune-threshold`.
 - [x] **P2** Hybrid search (BM25 + vectors). *(Stage 1)*
 - [ ] **P1** Paraphrase robustness (D5): query rewriting and/or stronger reranker, measured on the paraphrase slice.
 - [ ] **P2** BM25 index is rebuilt in memory per API process from the full collection; fine for thousands of chunks, revisit (e.g. Chroma full-text search or a dedicated index) beyond that.
@@ -390,8 +409,9 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 | 2026-11-01 | BM25 derived from Chroma in memory (rank-bm25), not a second store | One source of truth, no new service; corpus is tiny |
 | 2026-11-01 | RRF to choose reranker candidates instead of score blending | Rank-based, no score calibration between BM25 and cosine needed; standard k=60 |
 | 2026-11-01 | Repeat section header on sub-chunks | Fixed an ID-linking failure (INC-2024-01 CAPA) at the cost of one rank-1→2 swap |
-| 2026-11-01 | Keep `ms-marco-MiniLM-L-6` reranker | L-12 was not better on this set (89% vs 91% hit@3, ID 95% vs 100%) |
-| 2026-11-01 | `MIN_RERANK_SCORE` −6.0 → −10.9 and documented as a cost filter | −6 wrongly refused 8/47 in-scope questions; the grounded prompt is the real refusal mechanism |
+| 2026-11-01 | Keep `ms-marco-MiniLM-L-6` reranker | L-12 was mixed (no cutoff): same hit@3 (43/47), better MRR (0.887 vs 0.858), worse on IDs (19/20 vs 20/20), larger image. No hit gain to justify it |
+| 2026-11-01 | `MIN_RERANK_SCORE` −6.0 → −10.25, chosen on a held-out tune split, documented as a cost filter | −6 wrongly refused 8/47 answerable questions; −10.9 (picked on the full set) was rejected because it was tuned on its own test set; the grounded prompt is the real refusal mechanism |
+| 2026-11-01 | Report attribution leave-one-out at the final config, with counts | A sequential ladder makes each step's gain depend on the order; counts avoid overstating small samples |
 | 2026-11-01 | Add a paraphrase slice to the eval | Document-derived questions were biased towards lexical overlap and hid hybrid's value |
 | 2026-11-01 | Default `gemini-3.8-flash`, thinking level `low`, 2048 output tokens | Thinking tokens share the output budget on 3.x; grounded answers need little reasoning, so a low level keeps latency and cost down while 2048 leaves headroom |
 | 2026-11-01 | Validate the model at startup with `models.get` | Costs no generation quota; turns a silent per-request failure into one clear startup error |

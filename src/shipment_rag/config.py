@@ -44,12 +44,12 @@ class Settings(BaseSettings):
     final_k: int = Field(3, ge=1, le=10)
     # ms-marco cross-encoder returns logits; chunks scoring below this are treated
     # as irrelevant so out-of-scope questions are refused without calling the LLM.
-    # Tuned in Stage 1 (data/eval/reports/stage1_experiments.md): weakest answerable in-scope
-    # top score -9.97 (paraphrased questions score low), strongest off-domain -11.14. -10.9
-    # keeps every in-scope question while still filtering off-domain junk, but the margin
-    # on that side is only ~0.24: it saves LLM calls, it is NOT the refusal guarantee — the
-    # grounded prompt is. Tuned on the same set it's reported on; re-check on held-out data.
-    min_rerank_score: float = -10.9
+    # Chosen by `shipment-rag tune-threshold` on the *tune* split only
+    # (data/eval/reports/stage1_threshold_holdout.md): weakest answerable in-scope top score
+    # -9.24, strongest off-domain -11.25 -> -10.25. On the held-out test split: 0 false
+    # refusals, 3/3 off-domain refused. It filters obvious junk to save LLM calls; it is NOT
+    # the refusal guarantee — the grounded prompt is.
+    min_rerank_score: float = -10.25
 
     # --- LLM ---
     gemini_api_key: SecretStr | None = None

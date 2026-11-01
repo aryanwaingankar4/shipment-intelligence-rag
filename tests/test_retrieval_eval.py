@@ -5,6 +5,10 @@ import pytest
 
 from shipment_rag.evaluation.retrieval_eval import (
     Case,
+    CaseResult,
+    EvalReport,
+    assign_splits,
+    choose_threshold,
     comparison_table,
     evaluate,
     load_cases,
@@ -74,4 +78,55 @@ def test_metrics():
     assert rep.refusal_rate("near_domain") == 0.0
     assert rep.gate_score() == pytest.approx(3 / 4)  # near-domain not gated
     assert rep.margin()["max_off_domain_top"] == -11.0
-    assert "| hit@3 — all in-scope (n=3) | 67% |" in comparison_table([rep])
+    assert "| hit@3 — all in-scope | 2/3 (67%) |" in comparison_table([rep])
+
+
+def test_object_format_default_tags_and_dedup(tmp_path):
+    (tmp_path / "a.json").write_text(json.dumps([{"question": "Q1", "expect_any": ["x"]}]),
+                                     encoding="utf-8")
+    (tmp_path / "b.json").write_text(json.dumps({
+        "default_tags": ["paraphrase", "user"],
+        "cases": [{"question": "q1 ", "expect_any": ["x"]},  # duplicate of Q1
+                  {"question": "Q2", "expect_any": ["y"]}],
+    }), encoding="utf-8")
+    cases = load_cases(tmp_path / "a.json", tmp_path / "b.json", tmp_path / "missing.json")
+    assert [c.question for c in cases] == ["Q1", "Q2"]
+    assert cases[1].tags == ["paraphrase", "user"]
+
+
+def _cases(n, kind="in_scope", tags=()):
+    return [Case(f"{kind} {t} {i}", kind, expect_any=["x"], tags=list(tags))
+            for i in range(n) for t in [tags[0] if tags else "plain"]]
+
+
+def test_splits_are_stratified_deterministic_and_respect_explicit_split():
+    cases = _cases(10, tags=("id",)) + _cases(6, "off_domain") + _cases(5, "near_domain")
+    cases[0].split = "test"
+    assign_splits(cases)
+    again = assign_splits([Case(c.question, c.kind, tags=c.tags) for c in cases[1:]])
+    assert [c.split for c in cases[1:]] == [c.split for c in again]
+    assert cases[0].split == "test"
+    off = [c.split for c in cases if c.kind == "off_domain"]
+    assert off.count("tune") == off.count("test") == 3
+    near = [c.split for c in cases if c.kind == "near_domain"]
+    assert abs(near.count("tune") - near.count("test")) == 1
+
+
+def _scored(kind, score, in_candidates=True):
+    return CaseResult(Case("q", kind), rank=None, in_candidates=in_candidates,
+                      refused=False, top_score=score, top_source="-")
+
+
+def test_choose_threshold_takes_widest_gap_with_fewest_errors():
+    rows = [_scored("in_scope", s) for s in (4.0, -2.0, -9.0)]
+    rows += [_scored("in_scope", -12.0, in_candidates=False)]  # unanswerable: ignored
+    rows += [_scored("off_domain", s) for s in (-11.0, -11.5)]
+    t, info = choose_threshold(EvalReport("hybrid", 3, None, rows))
+    assert t == -10.0 and info["tune_errors"] == 0 and info["margin"] == 1.0
+
+
+def test_choose_threshold_minimises_errors_when_scores_overlap():
+    rows = [_scored("in_scope", s) for s in (2.0, -10.0)]
+    rows += [_scored("off_domain", s) for s in (-9.0, -12.0)]
+    _, info = choose_threshold(EvalReport("hybrid", 3, None, rows))
+    assert info["tune_errors"] == 1

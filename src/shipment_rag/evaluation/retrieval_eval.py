@@ -1,6 +1,9 @@
 """Retrieval evaluation (no LLM calls).
 
-Case types in the JSON eval file:
+Eval files are JSON: either a list of cases, or an object
+{"default_tags": [...], "cases": [...]} whose tags are added to every case.
+
+Case types:
   in-scope      {"question", "expect_any": [...]} or {"expect_all": [...]}, optional "tags"
                 relevant chunk = contains any (or all) of the keywords, case-insensitive
   off-domain    {"question", "expect_refusal": true}
@@ -9,14 +12,22 @@ Case types in the JSON eval file:
                 on-topic but unanswerable (unknown ID, missing fact). Retrieval *will*
                 often find related chunks; the LLM must refuse. Reported, not gated.
 
+Splits: every case is deterministically assigned to "tune" or "test" (stratified by kind
+and slice, ordered by a hash of the question), unless it sets "split" itself. Thresholds
+are chosen on "tune" and reported on "test" so they aren't tuned on their own test set.
+
 Metrics (in-scope): hit@k, MRR@k over the final top-k, candidate recall (a relevant chunk
 reached the reranker at all), false refusals. Gate score = (in-scope hits + off-domain
 refusals) / (in-scope + off-domain cases).
 """
 
+import hashlib
 import json
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+
+SLICES = ("id", "paraphrase")  # tags reported separately
 
 
 @dataclass
@@ -26,12 +37,17 @@ class Case:
     expect_any: list[str] = field(default_factory=list)
     expect_all: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    split: str = ""  # tune | test
 
     def is_relevant(self, text: str) -> bool:
         t = text.lower()
         if self.expect_all:
             return all(k.lower() in t for k in self.expect_all)
         return any(k.lower() in t for k in self.expect_any)
+
+    @property
+    def stratum(self) -> str:
+        return self.kind + ":" + next((s for s in SLICES if s in self.tags), "other")
 
 
 @dataclass
@@ -60,24 +76,36 @@ class EvalReport:
     def _rows(self, kind: str, tag: str | None = None) -> list[CaseResult]:
         return [r for r in self.rows if r.case.kind == kind and (tag is None or tag in r.case.tags)]
 
-    def hit_at_k(self, tag: str | None = None) -> float:
+    def hits(self, tag: str | None = None) -> tuple[int, int]:
         rows = self._rows("in_scope", tag)
-        return sum(r.rank is not None for r in rows) / len(rows) if rows else float("nan")
+        return sum(r.rank is not None for r in rows), len(rows)
+
+    def hit_at_k(self, tag: str | None = None) -> float:
+        h, n = self.hits(tag)
+        return h / n if n else float("nan")
 
     def mrr(self, tag: str | None = None) -> float:
         rows = self._rows("in_scope", tag)
         return sum(1 / r.rank for r in rows if r.rank) / len(rows) if rows else float("nan")
 
-    def candidate_recall(self) -> float:
+    def candidate_hits(self) -> tuple[int, int]:
         rows = self._rows("in_scope")
-        return sum(r.in_candidates for r in rows) / len(rows) if rows else float("nan")
+        return sum(r.in_candidates for r in rows), len(rows)
+
+    def candidate_recall(self) -> float:
+        h, n = self.candidate_hits()
+        return h / n if n else float("nan")
 
     def false_refusals(self) -> int:
         return sum(r.refused for r in self._rows("in_scope"))
 
-    def refusal_rate(self, kind: str) -> float:
+    def refusals(self, kind: str) -> tuple[int, int]:
         rows = self._rows(kind)
-        return sum(r.refused for r in rows) / len(rows) if rows else float("nan")
+        return sum(r.refused for r in rows), len(rows)
+
+    def refusal_rate(self, kind: str) -> float:
+        h, n = self.refusals(kind)
+        return h / n if n else float("nan")
 
     def gate_score(self) -> float:
         gated = self._rows("in_scope") + self._rows("off_domain")
@@ -97,21 +125,53 @@ class EvalReport:
         }
 
 
-def load_cases(path: Path) -> list[Case]:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    cases = []
-    for c in raw:
-        kind = c.get("kind", "off_domain") if c.get("expect_refusal") else "in_scope"
-        cases.append(
-            Case(
-                question=c["question"],
-                kind=kind,
-                expect_any=c.get("expect_any", []),
-                expect_all=c.get("expect_all", []),
-                tags=c.get("tags", []),
-            )
-        )
+def _stable_hash(text: str) -> str:
+    return hashlib.sha1(text.strip().lower().encode("utf-8")).hexdigest()
+
+
+def assign_splits(cases: list[Case]) -> list[Case]:
+    """Stratified, deterministic tune/test split: within each (kind, slice) stratum, order
+    by question hash and alternate tune, test, tune, ... Explicit "split" values win."""
+    groups: dict[str, list[Case]] = defaultdict(list)
+    for c in cases:
+        if not c.split:
+            groups[c.stratum].append(c)
+    for group in groups.values():
+        for i, c in enumerate(sorted(group, key=lambda c: _stable_hash(c.question))):
+            c.split = "tune" if i % 2 == 0 else "test"
     return cases
+
+
+def _parse(raw: dict, default_tags: list[str]) -> Case:
+    kind = raw.get("kind", "off_domain") if raw.get("expect_refusal") else "in_scope"
+    return Case(
+        question=raw["question"],
+        kind=kind,
+        expect_any=raw.get("expect_any", []),
+        expect_all=raw.get("expect_all", []),
+        tags=sorted(set(raw.get("tags", [])) | set(default_tags)),
+        split=raw.get("split", ""),
+    )
+
+
+def load_cases(*paths: Path, split: str = "all") -> list[Case]:
+    cases = []
+    for path in paths:
+        path = Path(path)
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        items, tags = (data, []) if isinstance(data, list) else (
+            data.get("cases", []), data.get("default_tags", []))
+        cases += [_parse(c, tags) for c in items]
+    seen, unique = set(), []
+    for c in cases:  # the same question in two files counts once
+        key = _stable_hash(c.question)
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    assign_splits(unique)
+    return unique if split == "all" else [c for c in unique if c.split == split]
 
 
 def evaluate(retriever, cases: list[Case]) -> EvalReport:
@@ -134,8 +194,49 @@ def evaluate(retriever, cases: list[Case]) -> EvalReport:
     return EvalReport(retriever.mode, retriever.final_k, retriever.min_rerank_score, rows)
 
 
+def choose_threshold(report: EvalReport) -> tuple[float, dict]:
+    """Pick MIN_RERANK_SCORE from an *unthresholded* report (normally the tune split).
+
+    Errors at threshold t: answerable in-scope questions (relevant chunk reached the
+    reranker) whose top score < t, plus off-domain questions whose top score >= t.
+    Candidates are the midpoints between consecutive observed scores; pick the one with
+    the fewest errors, breaking ties by the widest margin to the nearest observed score.
+    """
+    keep = [r.top_score for r in report.rows
+            if r.case.kind == "in_scope" and r.in_candidates and r.top_score is not None]
+    drop = [r.top_score for r in report.rows
+            if r.case.kind == "off_domain" and r.top_score is not None]
+    if not keep or not drop:
+        raise ValueError("need answerable in-scope and off-domain cases to choose a threshold")
+    scores = sorted(set(keep + drop))
+    candidates = [(a + b) / 2 for a, b in zip(scores, scores[1:], strict=False)]
+    candidates += [scores[0] - 1.0, scores[-1] + 1.0]
+
+    def errors(t):
+        return sum(s < t for s in keep) + sum(s >= t for s in drop)
+
+    def margin(t):
+        return min(abs(t - s) for s in scores)
+
+    best = min(candidates, key=lambda t: (errors(t), -margin(t)))
+    info = {
+        "threshold": round(best, 2),
+        "tune_errors": errors(best),
+        "margin": round(margin(best), 2),
+        "weakest_answerable": min(keep),
+        "strongest_off_domain": max(drop),
+        "n_answerable": len(keep),
+        "n_off_domain": len(drop),
+    }
+    return round(best, 2), info
+
+
 def _pct(x: float) -> str:
     return "n/a" if x != x else f"{x:.0%}"
+
+
+def _frac(h: int, n: int) -> str:
+    return "n/a" if not n else f"{h}/{n} ({h / n:.0%})"
 
 
 def _num(x: float | None) -> str:
@@ -144,24 +245,20 @@ def _num(x: float | None) -> str:
 
 def comparison_table(reports: list[EvalReport]) -> str:
     k = reports[0].k
-    n_in = len(reports[0]._rows("in_scope"))
-    n_id = len(reports[0]._rows("in_scope", "id"))
-    n_para = len(reports[0]._rows("in_scope", "paraphrase"))
-    n_off = len(reports[0]._rows("off_domain"))
-    n_near = len(reports[0]._rows("near_domain"))
     metrics = [
-        (f"hit@{k} — all in-scope (n={n_in})", lambda r: _pct(r.hit_at_k())),
-        (f"hit@{k} — ID-heavy (n={n_id})", lambda r: _pct(r.hit_at_k("id"))),
-        (f"hit@{k} — paraphrased (n={n_para})", lambda r: _pct(r.hit_at_k("paraphrase"))),
+        (f"hit@{k} — all in-scope", lambda r: _frac(*r.hits())),
+        (f"hit@{k} — ID-heavy", lambda r: _frac(*r.hits("id"))),
+        (f"hit@{k} — paraphrased", lambda r: _frac(*r.hits("paraphrase"))),
+        (f"hit@{k} — owner-written paraphrases", lambda r: _frac(*r.hits("user"))),
         (f"MRR@{k} — all in-scope", lambda r: f"{r.mrr():.3f}"),
         (f"MRR@{k} — ID-heavy", lambda r: f"{r.mrr('id'):.3f}"),
         (f"MRR@{k} — paraphrased", lambda r: f"{r.mrr('paraphrase'):.3f}"),
         ("candidate recall (relevant chunk reached reranker)",
-         lambda r: _pct(r.candidate_recall())),
+         lambda r: _frac(*r.candidate_hits())),
         ("false refusals (in-scope refused)", lambda r: str(r.false_refusals())),
-        (f"off-domain refused (n={n_off})", lambda r: _pct(r.refusal_rate("off_domain"))),
-        (f"near-domain refused at retrieval (n={n_near}, informational)",
-         lambda r: _pct(r.refusal_rate("near_domain"))),
+        ("off-domain refused", lambda r: _frac(*r.refusals("off_domain"))),
+        ("near-domain refused at retrieval (informational)",
+         lambda r: _frac(*r.refusals("near_domain"))),
         ("min top score, answerable in-scope", lambda r: _num(r.margin()["min_in_scope_top"])),
         ("max top score, off-domain", lambda r: _num(r.margin()["max_off_domain_top"])),
         ("**gate score**", lambda r: f"**{_pct(r.gate_score())}**"),
@@ -173,8 +270,9 @@ def comparison_table(reports: list[EvalReport]) -> str:
 
 
 def case_table(reports: list[EvalReport]) -> str:
-    head = "| # | Question | kind | " + " | ".join(f"{r.mode} rank / top" for r in reports) + " |"
-    sep = "|---|---|---|" + "---|" * len(reports)
+    head = ("| # | Question | kind | split | "
+            + " | ".join(f"{r.mode} rank / top" for r in reports) + " |")
+    sep = "|---|---|---|---|" + "---|" * len(reports)
     lines = [head, sep]
     for i, row0 in enumerate(reports[0].rows, 1):
         cells = []
@@ -186,5 +284,6 @@ def case_table(reports: list[EvalReport]) -> str:
                 status = "refused" if r.refused else "answered"
             cells.append(f"{status} / {_num(r.top_score)}")
         q = row0.case.question.replace("|", "\\|")
-        lines.append(f"| {i} | {q} | {row0.case.kind} | " + " | ".join(cells) + " |")
+        lines.append(f"| {i} | {q} | {row0.case.kind} | {row0.case.split} | "
+                     + " | ".join(cells) + " |")
     return "\n".join(lines)
