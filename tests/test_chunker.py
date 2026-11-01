@@ -48,6 +48,18 @@ def test_long_sections_are_sub_split_and_keep_section_name():
     assert {c.metadata["section_name"] for c in chunks} == {"BIG SECTION"}
 
 
+def test_sub_chunks_repeat_their_section_header():
+    body = "=== INCIDENT INC-2024-01 ===\n" + "\n".join(f"Line {i}: detail." for i in range(80))
+    doc = Document(text=body, source="inc.txt")
+    with_headers = chunk_document(doc, max_chars=300, overlap=30)
+    assert len(with_headers) > 1
+    assert all(c.text.startswith("=== INCIDENT INC-2024-01 ===") for c in with_headers)
+    assert all(len(c.text) <= 300 for c in with_headers)
+
+    without = chunk_document(doc, max_chars=300, overlap=30, section_headers=False)
+    assert not all(c.text.startswith("=== INCIDENT") for c in without)
+
+
 def test_knowledge_base_uses_fictional_brand_only():
     # D1: the docs must not reference the real company TraceLink
     for doc in load_documents(DOCS):

@@ -38,8 +38,14 @@ jobs:
           CHROMA_PERSIST_PATH: /tmp/chroma_ci
         run: |
           shipment-rag ingest
-          shipment-rag eval --min-score 0.9
+          shipment-rag eval --mode all --min-score 0.9 --report eval-report.md
           shipment-rag eval --file data/eval/notebook_eval_8.json --min-score 0.9
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-eval-report
+          path: eval-report.md
 
   docker:
     runs-on: ubuntu-latest

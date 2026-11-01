@@ -53,17 +53,33 @@ def chunk_id(source: str, text: str) -> str:
     return f"{source}:{digest}"
 
 
-def chunk_document(doc: Document, max_chars: int = 700, overlap: int = 80) -> list[Chunk]:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=max_chars, chunk_overlap=overlap, separators=["\n\n", "\n", ". ", " ", ""]
+def _splitter(size: int, overlap: int) -> RecursiveCharacterTextSplitter:
+    return RecursiveCharacterTextSplitter(
+        chunk_size=size, chunk_overlap=min(overlap, size // 2),
+        separators=["\n\n", "\n", ". ", " ", ""],
     )
+
+
+def chunk_document(
+    doc: Document, max_chars: int = 700, overlap: int = 80, section_headers: bool = True
+) -> list[Chunk]:
+    """section_headers: repeat a section's `=== HEADER ===` line on every sub-chunk, so a
+    piece that lost its header (e.g. the CAPA half of an incident) still says which
+    incident/product/shipment it belongs to — for both BM25 and the cross-encoder."""
     candidates: list[tuple[str, str]] = []
     for section in split_into_sections(doc.text):
         name = section_name_of(section)
         if len(section) <= max_chars:
             candidates.append((section, name))
-        else:
-            candidates.extend((piece.strip(), name) for piece in splitter.split_text(section))
+            continue
+        first = section.splitlines()[0]
+        header = first if section_headers and _HEADER_RE.match(first) else ""
+        budget = max_chars - len(header) - 1 if header else max_chars
+        for piece in _splitter(budget, overlap).split_text(section):
+            piece = piece.strip()
+            if header and not piece.startswith(header):
+                piece = f"{header}\n{piece}"
+            candidates.append((piece, name))
 
     chunks, seen = [], set()
     for i, (text, section) in enumerate(candidates):

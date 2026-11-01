@@ -16,6 +16,10 @@ def build_retriever(settings: Settings, collection=None) -> Retriever:
         retrieve_k=settings.retrieve_k,
         final_k=settings.final_k,
         min_rerank_score=settings.min_rerank_score,
+        mode=settings.retrieval_mode,
+        bm25_k=settings.bm25_k,
+        rerank_k=settings.rerank_k,
+        rrf_k=settings.rrf_k,
     )
 
 

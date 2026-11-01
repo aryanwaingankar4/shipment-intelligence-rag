@@ -22,10 +22,11 @@ answers that cite the company documents and refuse anything outside them.
 
 | Stage | Choice |
 |---|---|
-| Chunking | Section-aware (`=== HEADER ===`), sub-split only if > 700 chars, content-hash IDs |
+| Chunking | Section-aware (`=== HEADER ===`), sub-split only if > 700 chars, section header repeated on every sub-chunk, content-hash IDs |
 | Embeddings | `all-MiniLM-L6-v2` (384-d, normalized) |
 | Vector DB | ChromaDB 1.5.9 (cosine) — embedded locally, server mode in Docker |
-| Rerank | `cross-encoder/ms-marco-MiniLM-L-6-v2`, top-8 → top-3, irrelevance threshold |
+| Candidates | **Hybrid** (`RETRIEVAL_MODE=hybrid`): vector top-8 + BM25 top-8 with an ID-aware tokenizer, fused by reciprocal rank fusion → 12 candidates |
+| Rerank | `cross-encoder/ms-marco-MiniLM-L-6-v2` → top-3, junk filter at `MIN_RERANK_SCORE=-10.9` |
 | LLM | Gemini (`gemini-3.8-flash` default, low thinking level) via `google-genai`, retries with backoff, fails fast if the model is unavailable |
 | Guardrails | Refuse without an LLM call when nothing relevant is retrieved; strict grounded system prompt |
 
@@ -83,22 +84,57 @@ Secrets: enable the pre-commit scan once per clone with `git config core.hooksPa
 
 ## Results
 
-Retrieval is evaluated without any LLM calls (`shipment-rag eval`), so it runs in CI on
-every PR. A case passes if an expected keyword appears in the final top-3 passages; an
-out-of-scope case passes if nothing clears the reranker threshold.
+Retrieval is evaluated without any LLM calls (`shipment-rag eval --mode all`), so it runs
+in CI on every PR. Eval set: `data/eval/retrieval_eval.json`, **58 questions**: 47 in-scope
+(20 ID-heavy such as `SH-2024-006` / `BATCH-FRZ-2403` / `V-003`, 10 paraphrased in everyday
+wording, 17 other), 6 off-domain, and 5 near-domain (on-topic but unanswerable, e.g. a
+non-existent shipment ID). A question is a hit if a passage containing the expected facts
+is in the final top-3.
 
-| Eval set | Method | Score |
+### Retrieval: before → after (same 58-question set, same index and models)
+
+| Metric | Phase 4 baseline<br>vector, threshold −6 | Stage 1<br>hybrid + section headers, −10.9 |
 |---|---|---|
-| `data/eval/retrieval_eval.json` (10 in-scope + 2 out-of-scope) | vector top-8 → cross-encoder rerank → threshold → top-3 | **12/12** |
-| `data/eval/notebook_eval_8.json` (the prototype's 8 questions, recovered from the notebook) | notebook method: vector top-3, no rerank | 8/8 |
-| same | current pipeline | 8/8 |
+| hit@3, all in-scope (n=47) | 74% | **91%** |
+| hit@3, ID-heavy (n=20) | 90% | **100%** |
+| hit@3, paraphrased (n=10) | 30% | **70%** |
+| MRR@3 | 0.734 | **0.858** |
+| candidate recall (right chunk reached the reranker) | 94% | **98%** |
+| in-scope questions wrongly refused | 8 | **0** |
+| off-domain questions refused before the LLM (n=6) | 100% | 100% |
 
-- The prototype README reported **7/8** on that 8-question set; it does **not** reproduce on
-  the current documents and index (8/8), so it isn't used as a before/after number.
-- Both sets are saturated: plain vector search already solves them, so they can't show what
-  the reranker or future changes add. Known failures (a recall miss on an escalation-email
-  question, and a correct passage scored just under the refusal threshold) are tracked in
-  [PROJECT_STATUS.md](PROJECT_STATUS.md) and drive the next stage: hybrid search plus a harder eval set.
+What each change contributed (full tables in `data/eval/reports/`):
+
+| Step | hit@3 | MRR@3 | Why |
+|---|---|---|---|
+| Phase 4 baseline (vector, −6) | 74% | 0.734 | |
+| + hybrid BM25 / RRF | 79% | 0.777 | exact IDs; candidate recall 94% → 98% |
+| + section header on every sub-chunk | 81% | 0.777 | split sections no longer lose their incident / product ID |
+| + threshold −6 → −10.9 | **91%** | **0.858** | paraphrased questions score low on the cross-encoder and were being refused |
+
+Findings worth knowing:
+
+- **Vector and BM25 fail on different questions.** BM25 is perfect on IDs but finds nothing
+  for "how often do we get the exterminators in?"; vector handles paraphrases but misses
+  `SH-2024-006`. Hybrid gets the right chunk to the reranker 98 % of the time
+  (vector 94 %, BM25 87 %).
+- **The cross-encoder is now the bottleneck on paraphrases.** It lifts MRR (0.766 → 0.858)
+  and ID accuracy, but on paraphrased questions it does slightly *worse* than plain RRF
+  order (70 % vs 80 %). A larger `MiniLM-L12` reranker didn't help (89 % hit@3).
+- **The refusal threshold is a cost saver, not a guarantee.** The gap between the weakest
+  answerable question (−9.97) and the strongest off-domain one (−11.14) is small, and it
+  was tuned on this same set. Unanswerable on-topic questions (e.g. "status of
+  SH-2024-011?") score high and are left to the grounded prompt to refuse.
+- **Still failing:** 2 paraphrases ranked outside the top 3, 1 paraphrase with no relevant
+  candidate at all, and "which vendor had the lowest on-time rate?", which needs all 4
+  vendors at once (planned: structured query path).
+
+The prototype's own 8 questions (`data/eval/notebook_eval_8.json`, recovered from the
+notebook) score 8/8 with every method; the 7/8 in the prototype README doesn't reproduce,
+so it isn't used as a "before" number.
+
+Reproduce: `shipment-rag ingest && shipment-rag eval --mode all --report report.md`, and
+`python scripts/retrieval_experiments.py` for the ablation and threshold sweep.
 
 ## API
 
@@ -118,7 +154,8 @@ Response: `answer`, `refused`, `sources[] {source, section, rerank_score, snippe
 src/shipment_rag/   config, ingestion/, embeddings, vectorstore, retrieval, llm, pipeline, api/, cli
 ui/                 Streamlit front end (separate image)
 data/docs/          knowledge base (source of truth for the index)
-data/eval/          retrieval evaluation sets
+data/eval/          evaluation sets; reports/ holds generated eval reports
+scripts/            secret scanner, retrieval experiments
 assets/             screenshots
 tests/              unit + API tests (no models / network needed)
 notebooks/          original Colab prototype, kept for reference

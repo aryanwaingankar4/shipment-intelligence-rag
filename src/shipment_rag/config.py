@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     docs_path: Path = Path("data/docs")
     chunk_max_chars: int = 700
     chunk_overlap: int = 80
+    # repeat the section header on sub-split chunks (see chunker.chunk_document)
+    chunk_section_headers: bool = True
 
     # --- vector store: set CHROMA_HOST to use a Chroma server, else embedded on disk ---
     chroma_host: str | None = None
@@ -33,11 +35,21 @@ class Settings(BaseSettings):
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     # --- retrieval ---
-    retrieve_k: int = Field(8, ge=1, le=50)
+    # vector = embeddings only; bm25 = lexical only; hybrid = both, fused with RRF
+    retrieval_mode: Literal["vector", "bm25", "hybrid"] = "hybrid"
+    retrieve_k: int = Field(8, ge=1, le=50)  # vector candidates
+    bm25_k: int = Field(8, ge=1, le=50)  # lexical candidates
+    rerank_k: int = Field(12, ge=1, le=100)  # fused candidates sent to the cross-encoder
+    rrf_k: int = Field(60, ge=1)  # RRF damping constant (60 is the standard value)
     final_k: int = Field(3, ge=1, le=10)
     # ms-marco cross-encoder returns logits; chunks scoring below this are treated
     # as irrelevant so out-of-scope questions are refused without calling the LLM.
-    min_rerank_score: float = -6.0
+    # Tuned in Stage 1 (data/eval/reports/stage1_experiments.md): weakest answerable in-scope
+    # top score -9.97 (paraphrased questions score low), strongest off-domain -11.14. -10.9
+    # keeps every in-scope question while still filtering off-domain junk, but the margin
+    # on that side is only ~0.24: it saves LLM calls, it is NOT the refusal guarantee — the
+    # grounded prompt is. Tuned on the same set it's reported on; re-check on held-out data.
+    min_rerank_score: float = -10.9
 
     # --- LLM ---
     gemini_api_key: SecretStr | None = None
