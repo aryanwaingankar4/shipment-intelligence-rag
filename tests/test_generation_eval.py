@@ -191,14 +191,18 @@ def test_rate_limiter_spaces_calls():
     assert slept == [pytest.approx(6.0)]
 
 
-def test_daily_quota_stops_the_run_and_calibration_immediately():
+def test_daily_quota_skips_items_but_keeps_scoring_what_needs_no_new_call():
     from shipment_rag.llm import QuotaExhaustedError
 
-    items = [item(f"Q{i}") for i in range(4)]
-    pipe = FakePipeline({f"question Q{i}": QuotaExhaustedError("daily") for i in range(4)})
-    results = ge.run(pipe, ScriptedJudge(), items, max_consecutive_errors=3)
-    assert "QuotaExhaustedError" in results[0].error
-    assert all("daily quota exhausted" in r.error for r in results[1:])
+    refused = RAGAnswer("I don't have enough information...", [], refused=True, latency_ms=1)
+    pipe = FakePipeline({"question Q0": QuotaExhaustedError("daily"),
+                         "question Q1": QuotaExhaustedError("daily"),
+                         "question Q2": refused,  # refused at retrieval: no LLM needed
+                         "question Q3": QuotaExhaustedError("daily")})
+    items = [item("Q0"), item("Q1"), item("Q2", "refusal"), item("Q3")]
+    results = ge.run(pipe, ScriptedJudge(), items, max_consecutive_errors=2)
+    assert [r.verdict is not None for r in results] == [False, False, True, False]
+    assert all("not run" in r.error for r in (results[0], results[1], results[3]))
 
     case = {"id": "C", "flaw": "x", "question": "q", "reference_answer": "r",
             "passages": [], "answer": "a", "expect": {"faithful": True}}
@@ -206,3 +210,28 @@ def test_daily_quota_stops_the_run_and_calibration_immediately():
     cal = ge.run_calibration(judge, [case, dict(case, id="D")])
     assert len(judge.calls) == 1 and "not run" in cal[1]["error"]
     assert "(0/2 cases scored)" in ge.calibration_table(cal)
+    assert not ge.calibration_passed(cal)
+
+
+def test_calibration_gate_requires_every_check_and_every_case():
+    ok = {"id": "A", "flaw": "x", "checks": [("c", True)]}
+    assert ge.calibration_passed([ok])
+    assert not ge.calibration_passed([ok, {"id": "B", "flaw": "y", "checks": [("c", False)]}])
+    assert not ge.calibration_passed([ok, {"id": "C", "flaw": "z", "checks": [], "error": "x"}])
+    assert not ge.calibration_passed([])
+
+
+def test_cache_short_circuits_after_daily_quota_but_still_serves_hits(tmp_path):
+    from shipment_rag.llm import QuotaExhaustedError
+
+    llm = CountingLLM()
+    c = CachedLLM(llm, tmp_path, "answer")
+    c.generate("s", "cached")
+    llm.generate = lambda *a, **k: (_ for _ in ()).throw(QuotaExhaustedError("daily"))
+    with pytest.raises(QuotaExhaustedError):
+        c.generate("s", "new 1")
+    calls_before = llm.calls
+    with pytest.raises(QuotaExhaustedError):
+        c.generate("s", "new 2")  # no API attempt
+    assert llm.calls == calls_before
+    assert c.generate("s", "cached") == "answer to cached"  # cache still served

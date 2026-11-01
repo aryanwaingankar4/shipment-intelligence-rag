@@ -135,6 +135,27 @@ so self-preference bias is possible; calibration is the check.
 Partial results (4 questions, old rubric, not reported as results): 3/4 fully correct,
 4/4 faithful, 4/4 citations valid and supported.
 
+**D7 = (b): judge on a different model.** Calibration now runs *first* and gates the
+golden set: if the judge misses any planted flaw, nothing is scored
+(`--skip-calibration-gate` to override, `--calibration-only` to just check the judge).
+Candidates tried (each a single call; 429 responses cost nothing):
+
+| Judge candidate | Result |
+|---|---|
+| `gemini-3.1-pro-preview` (strongest listed) | no free-tier allowance: `GenerateContentInputTokensPerModelPerDay-FreeTier` |
+| `gemini-2.5-pro` | listed by `models`, but generation returns 404 for this key |
+| **`gemini-3.7-flash`** (chosen) | free tier, 20 requests/day; reported as **already used up today**, although this session never called it. Either other usage on the same Google project, or models share a bucket; unknown |
+
+So today's run stopped before calibration. Quota handling was tightened again: a
+daily-quota error now short-circuits further *uncached* calls on that model (no API
+request), while cached answers/judgments and retrieval refusals are still scored, and
+errors name the quota and its limit.
+
+**Resume plan** (`.env`: `JUDGE_MODEL=gemini-3.7-flash`): `shipment-rag eval-gen --report
+data/eval/reports/stage2_generation.md`. Calibration (6 judge calls) runs first; if it
+passes, ~22 answers (`gemini-3.8-flash`, 4 already cached) and ~23 judgments
+(`gemini-3.7-flash`). With 20/day per model, expect two days: the judge needs ~29 calls.
+
 ### Stage 1 — Hybrid search (v0.3.0) — ✅ complete, 2026-11-01
 
 **Built**
@@ -414,7 +435,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D4 | ~~Reconcile with `origin/main`~~ | ✅ **Resolved in Stage 0**: rebased, `aa4e065` dropped, PR to `main` open for owner review |
 | D5 | **Fixing the paraphrase weakness** (70% hit@3; cross-encoder scores colloquial questions very low) | Options, cheapest first: (a) LLM query rewriting into document vocabulary, which fits Stage 4 (it already adds rewriting for follow-ups) but costs one LLM call per question; (b) a stronger reranker such as `BAAI/bge-reranker-base` (~280M params, about 3× the image weight and CPU latency), which needs owner approval as a heavier model; (c) more/better embeddings. Recommendation: (a) in Stage 4, measured on the paraphrase slice. |
 | D6 | ~~CI retrieval gate 90% vs 89% with owner paraphrases~~ | ✅ **Resolved**: gate lowered to 85%, a regression guard below the current 89% baseline rather than a target |
-| D7 | **Finishing the generation eval under a 20 req/day free tier** (needs ~50 calls) | (a) Resume over 2–3 days; the cache makes each day continue where the last stopped (no cost). (b) Judge on a different Gemini model: quotas are per model, so this doubles daily capacity *and* removes self-preference bias. (c) Enable billing with a spend cap: a full run is ~50 calls × ~2–3k tokens, likely cents. Spending money is the owner's call. Recommendation: (b), plus (a) if needed. **Awaiting owner.** |
+| D7 | Finishing the generation eval under a 20 req/day free tier | ✅ **Decided: (b)**, judge on a different model. Pro models aren't usable on this free tier, so the judge is `gemini-3.7-flash`; calibration gates the scoring. Resumes day by day from the cache. |
 | D8 | **Live demo (Stage 5) quota**: 20 req/day on the free tier would be used up by a few visitors | Paid tier with a budget cap, or a higher-quota model for the public demo, plus per-key rate limiting and answer caching. Decide before Stage 5. |
 | D3 | Gemini model lifetime | Default is now **`gemini-3.8-flash`** (Stage 0.5). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 

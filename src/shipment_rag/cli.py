@@ -118,16 +118,23 @@ def cmd_eval_gen(args) -> int:
                           not args.no_cache)
     answer_llm.check_model()
     judge_llm.check_model()
-    pipeline = build_pipeline(settings, llm=answer_llm)
-
-    results = ge.run(pipeline, judge_llm, items)
+    # Calibrate the judge first: its scores are only used if it catches every planted flaw.
     cal = [] if args.no_calibration else ge.run_calibration(
         judge_llm, json.loads(Path(args.calibration).read_text(encoding="utf-8")))
+    if cal:
+        print(ge.calibration_table(cal) + "\n")
+    if args.calibration_only:
+        return 0 if ge.calibration_passed(cal) else 1
+    if cal and not ge.calibration_passed(cal) and not args.skip_calibration_gate:
+        print("judge calibration did not pass: not scoring the golden set "
+              "(fix the judge or rubric, or pass --skip-calibration-gate)", file=sys.stderr)
+        return 1
+
+    pipeline = build_pipeline(settings, llm=answer_llm)
+    results = ge.run(pipeline, judge_llm, items)
     s = ge.summarize(results)
     table = ge.summary_table(s)
     print(table)
-    if cal:
-        print("\n" + ge.calibration_table(cal))
     cost = (f"Answer model `{answer_llm.model}`: {answer_llm.misses} API calls, "
             f"{answer_llm.hits} from cache; judge `{judge_llm.model}` "
             f"(thinking {settings.judge_thinking_level or 'default'}): {judge_llm.misses} API "
@@ -247,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--file", default="data/eval/golden_qa.json")
     p.add_argument("--calibration", default="data/eval/judge_calibration.json")
     p.add_argument("--no-calibration", action="store_true")
+    p.add_argument("--calibration-only", action="store_true",
+                   help="only check the judge against planted flaws")
+    p.add_argument("--skip-calibration-gate", action="store_true",
+                   help="score the golden set even if the judge missed a planted flaw")
     p.add_argument("--limit", type=int, help="only the first N golden questions")
     p.add_argument("--rpm", type=float, help="override EVAL_RPM")
     p.add_argument("--no-cache", action="store_true", help="ignore and don't write the cache")

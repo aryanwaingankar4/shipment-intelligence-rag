@@ -4,7 +4,9 @@
   schema). Re-running an eval with unchanged inputs makes zero API calls, and a run that
   stops on a quota error resumes from where it got to.
 - Rate limiter: spaces real (uncached) calls at least 60/rpm seconds apart.
-Failures are never cached.
+Failures are never cached. After a daily-quota error, further *uncached* calls fail at once
+(no API request) while cached responses are still served, so a run keeps scoring
+everything it already has.
 """
 
 import hashlib
@@ -14,6 +16,8 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
+
+from shipment_rag.llm import QuotaExhaustedError
 
 
 class RateLimiter:
@@ -41,6 +45,7 @@ class CachedLLM:
         self.enabled = enabled
         self.hits = 0
         self.misses = 0
+        self.exhausted: Exception | None = None  # set after a daily-quota error
 
     def _key(self, system: str, prompt: str, json_schema: dict | None) -> str:
         identity = getattr(self.llm, "cache_identity", lambda: {"model": type(self.llm).__name__})()
@@ -55,10 +60,16 @@ class CachedLLM:
             self.hits += 1
             return json.loads(path.read_text(encoding="utf-8"))["text"]
 
+        if self.exhausted is not None:
+            raise self.exhausted  # no point asking: the daily quota is used up
         if self.rate_limiter:
             self.rate_limiter.wait()
-        text = self.llm.generate(system, prompt, json_schema=json_schema) if json_schema \
-            else self.llm.generate(system, prompt)
+        try:
+            text = self.llm.generate(system, prompt, json_schema=json_schema) if json_schema \
+                else self.llm.generate(system, prompt)
+        except QuotaExhaustedError as exc:
+            self.exhausted = exc
+            raise
         self.misses += 1
         if self.enabled:
             path.parent.mkdir(parents=True, exist_ok=True)

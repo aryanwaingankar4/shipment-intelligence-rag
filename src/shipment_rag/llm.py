@@ -39,6 +39,16 @@ def _retry_delay_s(exc) -> float | None:
     return None
 
 
+def _quota_desc(exc) -> str:
+    """'quotaId (limit N)' from a 429's QuotaFailure detail, if present."""
+    details = ((getattr(exc, "details", None) or {}).get("error") or {}).get("details") or []
+    for d in details:
+        for v in d.get("violations", []) or []:
+            if v.get("quotaId"):
+                return f"{v['quotaId']} (limit {v.get('quotaValue', '?')})"
+    return ""
+
+
 def _is_long_quota(exc: BaseException) -> bool:
     """429 for a per-day quota, or one whose suggested retry is minutes away."""
     from google.genai import errors
@@ -207,6 +217,8 @@ class GeminiLLM:
             if _is_long_quota(exc):
                 delay = _retry_delay_s(exc)
                 hours = f"; resets in ~{delay / 3600:.1f} h" if delay else ""
+                quota = _quota_desc(exc)
+                hours += f"; quota {quota}" if quota else ""
                 log.error("llm quota exhausted", extra={"model": self.model})
                 raise QuotaExhaustedError(
                     f"Gemini quota exhausted for {self.model} (HTTP 429){hours}"

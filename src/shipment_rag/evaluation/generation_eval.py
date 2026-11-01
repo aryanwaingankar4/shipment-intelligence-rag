@@ -196,15 +196,24 @@ def run(pipeline, judge_llm, items: list[GoldenItem], max_consecutive_errors: in
                 res.verdict = judge(judge_llm, item.question, item.type,
                                     item.reference_answer, passages, out.answer)
             consecutive = 0
+        except QuotaExhaustedError as exc:
+            # Keep going: cached answers/judgments are still served and retrieval refusals
+            # need no LLM; uncached calls fail instantly without an API request.
+            res.error = f"not run: {exc} (re-run resumes from cache)"[:200]
         except (LLMUnavailableError, json.JSONDecodeError, KeyError) as exc:
             res.error = f"{type(exc).__name__}: {exc}"[:200]
             consecutive += 1
             log.warning("generation eval item failed", extra={"id": item.id, "error": res.error})
-            if isinstance(exc, QuotaExhaustedError):
-                stop_reason = "daily quota exhausted"
-            elif consecutive >= max_consecutive_errors:
+            if consecutive >= max_consecutive_errors:
                 stop_reason = "stopped after repeated LLM errors"
     return results
+
+
+def calibration_passed(cal: list[dict]) -> bool:
+    """Every case scored and every planted flaw caught."""
+    return bool(cal) and all(
+        not c.get("error") and c["checks"] and all(ok for _, ok in c["checks"]) for c in cal
+    )
 
 
 def run_calibration(judge_llm, cases: list[dict]) -> list[dict]:
