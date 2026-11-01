@@ -36,7 +36,11 @@ def ingest(
         raise FileNotFoundError(f"no .txt documents found in {settings.docs_path}")
 
     chunks = [
-        c for d in docs for c in chunk_document(d, settings.chunk_max_chars, settings.chunk_overlap)
+        c
+        for d in docs
+        for c in chunk_document(
+            d, settings.chunk_max_chars, settings.chunk_overlap, settings.chunk_section_headers
+        )
     ]
     # the same text can appear in two files; keep the first occurrence
     by_id = {}

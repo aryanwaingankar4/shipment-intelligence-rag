@@ -1,0 +1,5 @@
+{
+  "_about": "Paraphrased questions written by the project owner (not derived from the documents). Each case: {\"question\": ..., \"expect_any\": [keywords]} or {\"expect_all\": [...]}; keywords must appear verbatim (case-insensitive) in the chunk that answers it. Tags below are added to every case; tune/test split is assigned automatically.",
+  "default_tags": ["paraphrase", "user"],
+  "cases": []
+}

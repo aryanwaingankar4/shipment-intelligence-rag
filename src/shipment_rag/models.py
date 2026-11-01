@@ -21,7 +21,7 @@ class RetrievedChunk:
     text: str
     source: str
     section: str
-    embed_score: float  # cosine similarity, 0..1
+    embed_score: float | None  # cosine similarity 0..1; None if only BM25 found it
     rerank_score: float  # cross-encoder logit
 
 
