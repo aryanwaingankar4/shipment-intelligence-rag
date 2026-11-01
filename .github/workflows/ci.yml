@@ -37,6 +37,7 @@ jobs:
         run: |
           shipment-rag ingest
           shipment-rag eval --min-score 0.9
+          shipment-rag eval --file data/eval/notebook_eval_8.json --min-score 0.9
 
   docker:
     runs-on: ubuntu-latest

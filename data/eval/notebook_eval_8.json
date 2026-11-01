@@ -1,0 +1,10 @@
+[
+  {"question": "What temperature must TL-COLD-9001 be stored at?", "expect_any": ["2°c", "8°c"]},
+  {"question": "What is the shelf life of StableCap Dry Powder?", "expect_any": ["36 months"]},
+  {"question": "How should TL-FROZ-7700 be transported?", "expect_any": ["dry ice"]},
+  {"question": "What happens if a frozen product rises above -10°C?", "expect_any": ["rejected"]},
+  {"question": "Which shipment was quarantined and why?", "expect_any": ["sh-2024-003", "11.2"]},
+  {"question": "Who supplies the frozen biological product?", "expect_any": ["arcticline"]},
+  {"question": "What was the root cause of incident INC-2024-02?", "expect_any": ["dry ice", "sublimated"]},
+  {"question": "Within how many hours must CDSCO be notified of a recall?", "expect_any": ["72 hours"]}
+]

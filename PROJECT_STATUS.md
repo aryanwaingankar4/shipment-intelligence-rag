@@ -7,7 +7,7 @@
 |---|---|
 | **Current version** | 0.2.1 |
 | **Current phase** | Stage 0 done (git cleanup + Phase 4 close-out) → next: Stage 1 hybrid search |
-| **Branch** | `phase-4-productionization` (not yet reconciled with `origin/main`, see §5 D4) |
+| **Branch** | `phase-4-productionization`, rebased onto `origin/main`, PR open for review (D4) |
 | **Last updated** | 2026-11-01 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -85,6 +85,15 @@ queue-based ingestion.
 - Inspected divergence: `origin/main` has 7 web-UI commits (screenshots in `assets/`
   under clean names, a 336-line Colab-era README, an empty `assets/placeholder.md`);
   local `main` has 1 commit adding the **byte-identical** screenshots under `screenshots/`.
+- **D4 resolved:** rebased the branch onto `origin/main`, dropping local commit `aa4e065`
+  (duplicate screenshots). README now uses `assets/*.png`; example queries carried over from
+  the remote README; empty `assets/placeholder.md` deleted. Remote history untouched;
+  merged via PR after owner review.
+- **Notebook baseline recovered:** the prototype's 8 retrieval questions (Cell 7) are now
+  `data/eval/notebook_eval_8.json`. On the current index they score **8/8 with the
+  notebook's own method** (vector top-3, no rerank) and **8/8 with the current pipeline**.
+  The 7/8 in the old README does not reproduce, so it's labelled as notebook-reported, not
+  used as a before/after. Both existing sets are saturated, which Stage 1 must fix.
 - All Phase 4 work committed on branch `phase-4-productionization`; audited that no `.env`,
   `.venv`, Chroma DB, model weights, logs or secrets are tracked. Added `.gitattributes`
   (LF line endings, so files used inside Linux containers aren't converted to CRLF on Windows).
@@ -168,9 +177,12 @@ Bugs / weaknesses fixed from the prototype:
 | `pytest` | ✅ 20/20 (new: brand-name guard) |
 | Re-ingest after rename | ✅ 38 chunks; 12 replaced / 26 unchanged |
 | `shipment-rag eval` (12 cases) | ✅ 12/12 = 100 % — unchanged by rename, top rerank scores within ±0.2 of before |
+| Notebook 8-question set, notebook method (vector top-3) | 8/8 (old README claimed 7/8 — not reproducible) |
+| Notebook 8-question set, current pipeline | 8/8 |
 | Staged-file audit (no `.env`, `.venv`, `chroma_db`, weights, logs, secrets) | ✅ |
-| Live Gemini answer (`shipment-rag ask …`) | ⏸ not run — no `.env` / `GEMINI_API_KEY` on this machine |
-| `docker compose up --build` + `/ready` + one query | ⏸ not run — Docker Desktop not running |
+| Rebase onto `origin/main`: diff vs pre-rebase branch = screenshots location + README path only | ✅ |
+| Live Gemini answer (`shipment-rag ask …`) | ⏸ owner to run (no key on this machine) |
+| `docker compose up --build` + `/ready` + one query | ⏸ owner to run (Docker Desktop not running) |
 
 ### Phase 4 (v0.2.0)
 
@@ -200,7 +212,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 |---|---|---|
 | D1 | ~~Brand mismatch (docs "TraceLink BioMed" vs UI "NexaChain BioMed")~~ | ✅ **Resolved in Stage 0** — docs renamed to NexaChain BioMed |
 | D2 | Where to host first | See Phase 5 options below. Cheapest credible path: one small VM + docker compose + Caddy (HTTPS). |
-| D4 | **Reconcile with `origin/main`** (diverged: 1 local / 7 remote commits) | Rebase this branch onto `origin/main`, drop local commit `aa4e065` (duplicate screenshots), point README at `assets/*.png`, carry the remote README's useful parts (example queries, 7/8 notebook baseline) into the new README; then PR → fast-forward `main`. **Awaiting owner approval.** |
+| D4 | ~~Reconcile with `origin/main`~~ | ✅ **Resolved in Stage 0**: rebased, `aa4e065` dropped, PR to `main` open for owner review |
 | D3 | Gemini model lifetime | `gemini-2.5-flash` is the default; Google retires models regularly — check the model list before each release and change `GEMINI_MODEL`. |
 
 ---
@@ -258,6 +270,8 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 | Date | Decision | Why |
 |---|---|---|
 | 2026-11-01 | Rename brand to NexaChain BioMed in docs; keep `TL-` SKU codes | Persona and knowledge agree; no real company referenced. SKUs are IDs used across shipments/eval |
+| 2026-11-01 | Rebase onto `origin/main` instead of merge; drop duplicate-screenshot commit | Linear history; remote already had identical images under cleaner names |
+| 2026-11-01 | Don't present the notebook's 7/8 as a "before" number | Different eval set and not reproducible (re-run gives 8/8); comparisons must be on the same set and the same index |
 | 2026-11-01 | Keep newly found failing retrieval cases out of the CI gate until Stage 1 | Keeps the original 12-case set as a clean baseline; failures are documented, not hidden |
 | 2026-11-01 | `.gitattributes` with `eol=lf` | Repo developed on Windows, run in Linux containers |
 | 2026-11-01 | Separate UI and API services | Independent scaling and deploys; the API can serve other clients (Slack bot, mobile) |
