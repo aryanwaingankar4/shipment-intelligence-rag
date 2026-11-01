@@ -46,6 +46,13 @@ def test_load_cases_kinds(tmp_path):
     assert kinds == ["in_scope", "off_domain", "near_domain"]
 
 
+def test_expect_sources_restricts_relevance_to_those_files():
+    c = Case("q", "in_scope", expect_any=["18 months"], expect_sources=["product_manual.txt"])
+    assert c.is_relevant("Shelf life: 18 months", "product_manual.txt")
+    assert not c.is_relevant("Shelf life: 18 months", "shipment_log.txt")
+    assert Case("q", "in_scope", expect_any=["x"]).is_relevant("x", "anything.txt")
+
+
 def test_expect_all_requires_every_keyword():
     c = Case("q", "in_scope", expect_all=["sh-2024-010", "anita rao"])
     assert not c.is_relevant("SH-2024-004 accepted by Dr. Anita Rao")

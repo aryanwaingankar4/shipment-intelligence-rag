@@ -138,6 +138,25 @@ retrieval quality; it only checks the cutoff. An earlier value of −10.9, picke
 set, scored one more hit (43/47). That difference is what tuning on your own test set buys
 you, which is why it wasn't kept.
 
+### Owner-written paraphrases (independent check)
+
+10 questions written by the project owner in their own words, without looking at the
+documents (`data/eval/user_paraphrases.json`, each with expected source files; report:
+`data/eval/reports/stage1_e_with_owner_paraphrases.md`):
+
+| | vector | BM25 | hybrid |
+|---|---|---|---|
+| hit@3, owner questions | 7/10 | 4/10 | **8/10** |
+| hit@3, all 57 in-scope questions | 47/57 | 44/57 | **50/57** |
+
+Both hybrid misses have the right passage among the candidates, but the cross-encoder
+ranks it low: "how many days can a frozen item last?" (the shelf-life passage ranks 6th
+of 12; "last" ≠ "shelf life") and "which company delivery is fast?" (a comparison across
+all vendors, ranked 10th). One question is a deliberate trap: no fine for storage-rule
+violations exists in the documents, so the right answer is to say so; the generation eval
+checks that. Re-tuning the cutoff with the owner's tune-half questions included chose
+−10.25 again.
+
 ### Findings worth knowing
 
 - **Vector and BM25 fail on different questions.** BM25 is perfect on IDs but finds nothing
