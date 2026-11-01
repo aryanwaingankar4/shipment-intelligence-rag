@@ -50,6 +50,7 @@ def test_generic_high_entropy_standalone_token():
         "reranker = cross-encoder/ms-marco-MiniLM-L-6-v2",
         "commit 6372edc0a9f1b3c4d5e6f708192a3b4c5d6e7f80",  # hex SHA: no uppercase
         "def test_model_not_found_is_still_an_llm_unavailable_error():",
+        "    SCHEMA, sort_keys=True)).encode()).hexdigest()[:8]",  # code, not a secret
         "auth_token = " + "AQ." + BODY + "  # secret-scan: allow",
     ],
 )

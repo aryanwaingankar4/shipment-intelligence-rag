@@ -38,10 +38,27 @@ def build_llm(settings: Settings) -> GeminiLLM:
     )
 
 
-def build_pipeline(settings: Settings, retriever: Retriever | None = None) -> RAGPipeline:
+def build_judge_llm(settings: Settings) -> GeminiLLM:
+    """LLM-as-judge for eval-gen: deterministic (temperature 0), more thinking than answers."""
+    if settings.gemini_api_key is None or not settings.gemini_api_key.get_secret_value():
+        raise RuntimeError("GEMINI_API_KEY is not set")
+    return GeminiLLM(
+        api_key=settings.gemini_api_key.get_secret_value(),
+        model=settings.judge_model or settings.gemini_model,
+        temperature=0.0,
+        max_output_tokens=4096,
+        max_retries=settings.llm_max_retries,
+        timeout_s=max(settings.llm_timeout_s, 120.0),  # judge thinks longer
+        thinking_level=settings.judge_thinking_level,
+    )
+
+
+def build_pipeline(
+    settings: Settings, retriever: Retriever | None = None, llm=None
+) -> RAGPipeline:
     return RAGPipeline(
         retriever=retriever or build_retriever(settings),
-        llm=build_llm(settings),
+        llm=llm or build_llm(settings),
         company=settings.company_name,
         assistant=settings.assistant_name,
     )

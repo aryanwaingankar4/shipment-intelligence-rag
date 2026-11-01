@@ -98,6 +98,77 @@ def cmd_eval(args) -> int:
     return 0 if gate >= args.min_score else 1
 
 
+def cmd_eval_gen(args) -> int:
+    """Generation eval: full pipeline answers scored by an LLM judge (uses Gemini quota)."""
+    import hashlib
+    from datetime import date
+
+    from shipment_rag.evaluation import generation_eval as ge
+    from shipment_rag.evaluation.llm_cache import CachedLLM, RateLimiter
+    from shipment_rag.factory import build_judge_llm, build_llm, build_pipeline
+
+    settings = get_settings()
+    items = ge.load_golden(Path(args.file))[: args.limit or None]
+    limiter = RateLimiter(args.rpm or settings.eval_rpm)  # shared: answers + judge
+    rubric = hashlib.sha256((ge.JUDGE_SYSTEM + ge.JUDGE_PROMPT + json.dumps(
+        ge.JUDGE_SCHEMA, sort_keys=True)).encode()).hexdigest()[:8]
+    cache = settings.eval_cache_dir
+    answer_llm = CachedLLM(build_llm(settings), cache, "answer", limiter, not args.no_cache)
+    judge_llm = CachedLLM(build_judge_llm(settings), cache, f"judge-{rubric}", limiter,
+                          not args.no_cache)
+    answer_llm.check_model()
+    judge_llm.check_model()
+    pipeline = build_pipeline(settings, llm=answer_llm)
+
+    results = ge.run(pipeline, judge_llm, items)
+    cal = [] if args.no_calibration else ge.run_calibration(
+        judge_llm, json.loads(Path(args.calibration).read_text(encoding="utf-8")))
+    s = ge.summarize(results)
+    table = ge.summary_table(s)
+    print(table)
+    if cal:
+        print("\n" + ge.calibration_table(cal))
+    cost = (f"Answer model `{answer_llm.model}`: {answer_llm.misses} API calls, "
+            f"{answer_llm.hits} from cache; judge `{judge_llm.model}` "
+            f"(thinking {settings.judge_thinking_level or 'default'}): {judge_llm.misses} API "
+            f"calls, {judge_llm.hits} from cache. Tokens this run: answers "
+            f"{answer_llm.usage}, judge {judge_llm.usage}.")
+    print("\n" + cost)
+
+    if args.report:
+        out = Path(args.report)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        partial = (f"\n> **Partial run:** {s['n_errors']} of {s['n_total']} questions not "
+                   "scored (LLM errors / quota). Re-running resumes from the cache.\n"
+                   if s["n_errors"] else "")
+        out.write_text(
+            f"# Generation eval — {date.today().isoformat()}\n\n"
+            f"Golden set `{Path(args.file).as_posix()}` ({len(items)} questions). "
+            f"Answers: `{answer_llm.model}` (thinking {settings.llm_thinking_level or 'default'}"
+            f", temperature {settings.llm_temperature}). Judge: `{judge_llm.model}` (thinking "
+            f"{settings.judge_thinking_level or 'default'}, temperature 0, rubric `{rubric}`). "
+            f"Retrieval: {settings.retrieval_mode}, MIN_RERANK_SCORE={settings.min_rerank_score}, "
+            f"top-{settings.final_k}.\n{partial}\n"
+            f"## Summary\n\n{table}\n\n"
+            f"## Judge calibration\n\nHand-written answers with planted flaws "
+            f"(`{Path(args.calibration).as_posix()}`), scored by the same judge:\n\n"
+            f"{ge.calibration_table(cal) if cal else 'skipped'}\n\n"
+            f"## Per question\n\n{ge.per_question_table(results)}\n\n"
+            f"## Answers that lost points\n\n{ge.failures_section(results)}\n\n"
+            f"## Cost\n\n{cost}\n\n"
+            "## Caveats\n\n"
+            "- The judge is an LLM; when it is the same model family as the answerer it may "
+            "favour its own style. The calibration table above is the check on that.\n"
+            "- Small sample: each slice has only a handful of questions, so treat single "
+            "questions as anecdotes and look at the per-question table.\n"
+            "- Key-fact recall is a strict string match and undercounts paraphrased facts; "
+            "the judge's correctness score is the primary metric.\n",
+            encoding="utf-8",
+        )
+        print(f"\nreport written to {out}")
+    return 0 if s["n_scored"] else 1
+
+
 def cmd_tune_threshold(args) -> int:
     """Choose MIN_RERANK_SCORE on the tune split, report it on the held-out test split."""
     from shipment_rag.evaluation.retrieval_eval import (
@@ -170,6 +241,17 @@ def main(argv: list[str] | None = None) -> int:
                    help="default: RETRIEVAL_MODE; 'all' compares the three (gate uses hybrid)")
     p.add_argument("--report", help="write a markdown report to this path")
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("eval-gen",
+                       help="answer-quality eval with an LLM judge (uses Gemini quota, cached)")
+    p.add_argument("--file", default="data/eval/golden_qa.json")
+    p.add_argument("--calibration", default="data/eval/judge_calibration.json")
+    p.add_argument("--no-calibration", action="store_true")
+    p.add_argument("--limit", type=int, help="only the first N golden questions")
+    p.add_argument("--rpm", type=float, help="override EVAL_RPM")
+    p.add_argument("--no-cache", action="store_true", help="ignore and don't write the cache")
+    p.add_argument("--report", help="write a markdown report to this path")
+    p.set_defaults(func=cmd_eval_gen)
 
     p = sub.add_parser("tune-threshold",
                        help="choose MIN_RERANK_SCORE on the tune split, report on the test split")

@@ -5,6 +5,7 @@ The old `google-generativeai` package used in the Colab notebook is deprecated;
 """
 
 import logging
+import time
 from typing import Protocol
 
 from tenacity import (
@@ -21,6 +22,33 @@ class LLMUnavailableError(RuntimeError):
     """The model could not produce an answer (quota, auth, outage, empty reply)."""
 
 
+class QuotaExhaustedError(LLMUnavailableError):
+    """A daily (or other long-window) quota is used up; retrying now is pointless."""
+
+
+def _retry_delay_s(exc) -> float | None:
+    """Server-suggested retry delay from a 429's RetryInfo detail, in seconds."""
+    details = ((getattr(exc, "details", None) or {}).get("error") or {}).get("details") or []
+    for d in details:
+        delay = str(d.get("retryDelay", ""))
+        if delay.endswith("s"):
+            try:
+                return float(delay[:-1])
+            except ValueError:
+                return None
+    return None
+
+
+def _is_long_quota(exc: BaseException) -> bool:
+    """429 for a per-day quota, or one whose suggested retry is minutes away."""
+    from google.genai import errors
+
+    if not (isinstance(exc, errors.APIError) and exc.code == 429):
+        return False
+    delay = _retry_delay_s(exc)
+    return "PerDay" in str(getattr(exc, "details", "")) or (delay is not None and delay > 120)
+
+
 class ModelNotFoundError(LLMUnavailableError):
     """GEMINI_MODEL doesn't exist or isn't available to this API key."""
 
@@ -33,13 +61,15 @@ class ModelNotFoundError(LLMUnavailableError):
 
 
 class LLM(Protocol):
-    def generate(self, system: str, prompt: str) -> str: ...
+    def generate(self, system: str, prompt: str, json_schema: dict | None = None) -> str: ...
 
 
 def _is_transient(exc: BaseException) -> bool:
     from google.genai import errors
 
     if isinstance(exc, errors.APIError):
+        if _is_long_quota(exc):  # daily quota: retrying with backoff only wastes time
+            return False
         return exc.code in (408, 429, 500, 502, 503, 504)
     return isinstance(exc, (ConnectionError, TimeoutError))
 
@@ -73,6 +103,13 @@ class GeminiLLM:
         self.temperature = temperature
         # On thinking models, thought tokens count against this budget too.
         self.max_output_tokens = max_output_tokens
+        self._thinking_desc = (
+            f"budget={thinking_budget}" if thinking_budget is not None
+            else f"level={thinking_level or 'default'}"
+        )
+        # running totals, for quota reporting
+        self.usage = {"calls": 0, "prompt_tokens": 0, "output_tokens": 0, "thought_tokens": 0,
+                      "seconds": 0.0, "max_seconds": 0.0}
         # Gemini 3.x uses thinking_level; 2.5 models need thinking_budget instead.
         if thinking_budget is not None:
             self._thinking = types.ThinkingConfig(thinking_budget=thinking_budget)
@@ -108,7 +145,17 @@ class GeminiLLM:
             if "generateContent" in (m.supported_actions or [])
         )
 
-    def _generate_once(self, system: str, prompt: str) -> str:
+    def cache_identity(self) -> dict:
+        """Everything that changes the output for a given prompt (used as a cache key)."""
+        return {"model": self.model, "temperature": self.temperature,
+                "max_output_tokens": self.max_output_tokens, "thinking": self._thinking_desc}
+
+    def _generate_once(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
+        json_cfg = (
+            {"response_mime_type": "application/json", "response_json_schema": json_schema}
+            if json_schema else {}
+        )
+        t0 = time.perf_counter()
         resp = self._client.models.generate_content(
             model=self.model,
             contents=prompt,
@@ -117,10 +164,21 @@ class GeminiLLM:
                 temperature=self.temperature,
                 max_output_tokens=self.max_output_tokens,
                 thinking_config=self._thinking,
+                **json_cfg,
             ),
         )
+        self._record_usage(resp, time.perf_counter() - t0)
         self._warn_if_truncated(resp)
         return (resp.text or "").strip()
+
+    def _record_usage(self, resp, seconds: float) -> None:
+        u = resp.usage_metadata
+        self.usage["calls"] += 1
+        self.usage["seconds"] = round(self.usage["seconds"] + seconds, 1)
+        self.usage["max_seconds"] = round(max(self.usage["max_seconds"], seconds), 1)
+        self.usage["prompt_tokens"] += getattr(u, "prompt_token_count", 0) or 0
+        self.usage["output_tokens"] += getattr(u, "candidates_token_count", 0) or 0
+        self.usage["thought_tokens"] += getattr(u, "thoughts_token_count", 0) or 0
 
     def _warn_if_truncated(self, resp) -> None:
         candidates = resp.candidates or []
@@ -138,13 +196,21 @@ class GeminiLLM:
                 },
             )
 
-    def generate(self, system: str, prompt: str) -> str:
+    def generate(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
+        """json_schema: ask for JSON matching this schema (structured output)."""
         try:
-            text = self._call(system, prompt)
+            text = self._call(system, prompt, json_schema)
         except Exception as exc:
             if _is_not_found(exc):
                 log.error("llm model not found", extra={"model": self.model})
                 raise ModelNotFoundError(self.model) from exc
+            if _is_long_quota(exc):
+                delay = _retry_delay_s(exc)
+                hours = f"; resets in ~{delay / 3600:.1f} h" if delay else ""
+                log.error("llm quota exhausted", extra={"model": self.model})
+                raise QuotaExhaustedError(
+                    f"Gemini quota exhausted for {self.model} (HTTP 429){hours}"
+                ) from exc
             log.exception("llm call failed")
             raise LLMUnavailableError(str(exc)) from exc
         if not text:

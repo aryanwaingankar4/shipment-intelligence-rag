@@ -42,7 +42,7 @@ ASSIGNMENT = re.compile(
     r"""(?ix)
     (?P<name>[A-Z0-9_\-]*(?:key|token|secret|passw(?:or)?d|pwd|credential|auth)[A-Z0-9_\-]*)
     ["']?\s*[:=]\s*["']?
-    (?P<value>[^\s"'`,;]{16,})
+    (?P<value>[A-Za-z0-9_\-+/=.~]{16,})  # key-like chars only: code such as foo(x) isn't a secret
     """
 )
 STANDALONE = re.compile(r"(?<![0-9A-Za-z_\-])[0-9A-Za-z_\-]{32,}(?![0-9A-Za-z_\-])")

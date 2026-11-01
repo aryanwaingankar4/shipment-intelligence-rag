@@ -28,6 +28,9 @@ class RetrievedChunk:
 @dataclass
 class RAGAnswer:
     answer: str
-    sources: list[RetrievedChunk]
+    sources: list[RetrievedChunk]  # shown to the user; empty when refused
     refused: bool
     latency_ms: int
+    # passages given to the LLM, in prompt order: what [n] citations refer to
+    context: list[RetrievedChunk] = field(default_factory=list)
+    llm_called: bool = False  # False when refused at retrieval

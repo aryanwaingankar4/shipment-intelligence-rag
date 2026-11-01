@@ -71,7 +71,8 @@ class RAGPipeline:
                 )
                 raise
             refused = text.strip().strip('"') == REFUSAL
-            result = RAGAnswer(text, [] if refused else chunks, refused=refused, latency_ms=_ms(t0))
+            result = RAGAnswer(text, [] if refused else chunks, refused=refused,
+                               latency_ms=_ms(t0), context=chunks, llm_called=True)
 
         log.info(
             "rag_query",

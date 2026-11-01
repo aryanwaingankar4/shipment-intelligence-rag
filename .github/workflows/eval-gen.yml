@@ -1,0 +1,67 @@
+name: Generation eval
+
+# Answer-quality eval with an LLM judge. Uses Gemini quota, so it is NOT part of per-PR CI:
+# it runs nightly and on demand. Responses are cached (keyed by prompt + model settings), so
+# a nightly run with no changes to the docs, golden set, prompts or code makes ~0 API calls.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Only the first N golden questions (empty = all)"
+        required: false
+  schedule:
+    - cron: "30 2 * * *"  # 02:30 UTC
+
+concurrency:
+  group: eval-gen
+  cancel-in-progress: false
+
+jobs:
+  eval-gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      CHROMA_PERSIST_PATH: /tmp/chroma_eval
+      EVAL_RPM: "8"
+    steps:
+      - name: Skip without an API key
+        if: env.GEMINI_API_KEY == ''
+        run: echo "::notice::GEMINI_API_KEY secret not set; skipping generation eval." && exit 0
+      - uses: actions/checkout@v4
+        if: env.GEMINI_API_KEY != ''
+      - uses: actions/setup-python@v5
+        if: env.GEMINI_API_KEY != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (CPU torch)
+        if: env.GEMINI_API_KEY != ''
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -e .
+      - name: Restore LLM response cache
+        if: env.GEMINI_API_KEY != ''
+        uses: actions/cache@v4
+        with:
+          path: data/eval/.cache
+          key: eval-gen-${{ hashFiles('data/eval/golden_qa.json', 'data/eval/judge_calibration.json', 'data/docs/**', 'src/**') }}
+          restore-keys: eval-gen-
+      - name: Cache HF models
+        if: env.GEMINI_API_KEY != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-minilm-v1
+      - name: Ingest + generation eval
+        if: env.GEMINI_API_KEY != ''
+        run: |
+          shipment-rag ingest
+          shipment-rag eval-gen --report eval-gen-report.md ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+      - name: Upload report
+        if: always() && env.GEMINI_API_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: generation-eval-report
+          path: eval-gen-report.md

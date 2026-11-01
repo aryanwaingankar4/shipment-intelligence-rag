@@ -24,3 +24,6 @@ query_logs.csv
 .idea/
 .DS_Store
 Thumbs.db
+
+# LLM response cache for eval-gen (re-creatable; may contain model outputs)
+data/eval/.cache/

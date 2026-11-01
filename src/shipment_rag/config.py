@@ -62,7 +62,15 @@ class Settings(BaseSettings):
     # Gemini 2.5 models use a token budget instead; when set, it overrides the level.
     llm_thinking_budget: int | None = None
     llm_max_retries: int = 4
-    llm_timeout_s: float = 30.0
+    # Sent to Gemini as the server-side deadline: 30 s produced 504 DEADLINE_EXCEEDED on
+    # gemini-3.8-flash during the Stage 2 eval runs.
+    llm_timeout_s: float = 60.0
+
+    # --- generation eval (shipment-rag eval-gen) ---
+    judge_model: str = ""  # empty = same as GEMINI_MODEL
+    judge_thinking_level: Literal["", "minimal", "low", "medium", "high"] = "medium"
+    eval_rpm: float = 8.0  # max uncached LLM calls per minute (answers + judge combined)
+    eval_cache_dir: Path = Path("data/eval/.cache")
 
     # --- API ---
     # Comma-separated list of accepted X-API-Key values. Empty = auth disabled (dev only).

@@ -95,3 +95,47 @@ def test_model_not_found_is_still_an_llm_unavailable_error():
 def test_empty_reply_is_unavailable():
     with pytest.raises(LLMUnavailableError):
         make_llm(FakeModels(_response(text=""))).generate("s", "q")
+
+
+def _quota_429(per_day=True, delay="71198s"):
+    quota = "GenerateRequestsPerDayPerProjectPerModel-FreeTier" if per_day \
+        else "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+    return errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+        "message": "quota", "details": [
+            {"@type": "type.googleapis.com/google.rpc.QuotaFailure",
+             "violations": [{"quotaId": quota, "quotaValue": "20"}]},
+            {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": delay}]}})
+
+
+class CountingModels(FakeModels):
+    def __init__(self, exc):
+        super().__init__(exc=exc)
+        self.n = 0
+
+    def generate_content(self, model, contents, config):
+        self.n += 1
+        return super().generate_content(model, contents, config)
+
+
+def test_daily_quota_fails_fast_without_retries():
+    from shipment_rag.llm import QuotaExhaustedError
+
+    models = CountingModels(_quota_429(per_day=True))
+    with pytest.raises(QuotaExhaustedError, match="resets in ~19.8 h"):
+        _with_retries(models, 4).generate("s", "q")
+    assert models.n == 1  # no retries
+
+
+def test_per_minute_quota_is_still_retried():
+    models = CountingModels(_quota_429(per_day=False, delay="7s"))
+    llm = _with_retries(models, 3)
+    llm._call.retry.wait = lambda rs: 0  # don't actually sleep in tests
+    with pytest.raises(LLMUnavailableError):
+        llm.generate("s", "q")
+    assert models.n == 3
+
+
+def _with_retries(models, n):
+    llm = GeminiLLM(api_key="test", model="gemini-test", max_retries=n)
+    llm._client = type("C", (), {"models": models})()
+    return llm

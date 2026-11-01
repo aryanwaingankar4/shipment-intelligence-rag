@@ -6,8 +6,8 @@
 | | |
 |---|---|
 | **Current version** | 0.3.2 |
-| **Current phase** | Stage 1 done (hybrid search) — awaiting review → next: Stage 2 generation eval |
-| **Branches** | PR #1 merged into `main`; `stage-1-hybrid-search` → PR #2 (open for review) |
+| **Current phase** | Stage 2 (generation eval) in progress: built and tested; full live run blocked by Gemini free-tier daily quota (D7) |
+| **Branches** | PRs #1 and #2 merged into `main`; `stage-2-generation-eval` (local) |
 | **Last updated** | 2026-11-01 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -78,11 +78,62 @@ queue-based ingestion.
 |---|---|---|
 | 0 | Git cleanup + Phase 4 close-out (D1 rename, live checks) | ✅ done (Docker check pending, see §4) |
 | 0.5 | Fixes from the owner's live check: truncation, model default + 404, secret scanning | ✅ done |
-| 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ✅ done, awaiting review |
-| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), nightly workflow | ⬜ |
+| 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ✅ done (PR #2 merged) |
+| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), nightly workflow | 🔶 built; full run pending quota (D7) |
 | 3 | Structured query path for aggregate shipment questions + router | ⬜ |
 | 4 | SSE streaming + follow-up questions (query rewriting) | ⬜ |
 | 5 | Real login, rate limiting, GHCR images, VM + Caddy deploy, CD | ⬜ (ask before spending money) |
+
+### Stage 2 — Generation eval — 🔶 in progress, 2026-11-01
+
+**Built**
+- `data/eval/golden_qa.json`: 26 questions written fresh (not reused from the retrieval
+  set): 20 answerable (7 single-doc, 4 ID-heavy, 5 multi-doc, 3 paraphrased, 1 aggregate),
+  4 that must be refused (3 near-domain, 1 off-domain), 2 traps where the documents lack
+  the specific figure (storage-rule fine, Q3 breach rate). Each has a reference answer,
+  key facts (with alternatives) and expected source files. Details the question doesn't
+  ask for are marked `Optional:` in the reference.
+- `shipment-rag eval-gen`: runs the real pipeline, then scores each answer:
+  - deterministic: key-fact recall, citation validity (`[n]` exists), cites an expected
+    source file;
+  - one LLM-judge call (fixed rubric, JSON schema output): refusal, correctness 0/1/2 vs
+    the reference, unsupported claims (faithfulness), cited passages support their
+    sentences. Questions refused at retrieval are scored by rule, with no judge call.
+- **Judge calibration** (`data/eval/judge_calibration.json`): 6 hand-written answers with
+  planted flaws (wrong number, invented fact, citation to the wrong passage, trap answered
+  with an invented fine, plus a correct answer and a correct refusal), each with its own
+  passages. Reported as judge agreement, so the judge's scores aren't taken on trust.
+- **Quota-aware:** disk cache keyed by prompt + model settings + rubric hash (re-runs and
+  resumes cost nothing); shared rate limiter (`EVAL_RPM`, default 8); a daily-quota 429
+  now fails fast with no retries and stops the run cleanly. Token and latency usage reported.
+- `.github/workflows/eval-gen.yml`: nightly + manual, outside per-PR CI; restores the
+  response cache so unchanged nightly runs make ~0 calls; skips cleanly without the secret.
+- Pipeline now returns the passages it gave the LLM (`context`) and whether the LLM was
+  called, so the eval can tell retrieval refusals from model refusals and judge citations
+  against what the model actually saw.
+
+**Why a custom Gemini judge instead of RAGAS:** one cached call per answer fits the free
+tier (RAGAS faithfulness makes several calls per answer); no langchain/datasets stack; the
+rubric is short enough to read and defend; calibration covers the "who checks the judge"
+question. Trade-off: the judge defaults to the answering model (`JUDGE_MODEL` overrides it),
+so self-preference bias is possible; calibration is the check.
+
+**Found during the first live runs**
+1. `LLM_TIMEOUT_S=30` is passed to Gemini as the server-side deadline and produced
+   `504 DEADLINE_EXCEEDED` on `gemini-3.8-flash`; raised to 60 s (judge 120 s). Per-call
+   latency is now recorded.
+2. **Free tier is 20 requests/day per model** (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`).
+   The full eval needs about 50 (≈23 answers + ≈23 judgments + 6 calibration), so it can't
+   finish in one day. The first run scored 4 questions before the quota ran out.
+3. The retry logic retried the daily-quota 429 with backoff 26 times (679 s wasted), and
+   calibration kept calling after the run stopped. Fixed: daily quota → `QuotaExhaustedError`,
+   no retry, run and calibration stop at once.
+4. A judge strictness issue caused by my reference answer: G01 ("storage conditions") lost a
+   point for not mentioning shelf life, which the question never asked. References now mark
+   extras `Optional:` and the rubric says they aren't required.
+
+Partial results (4 questions, old rubric, not reported as results): 3/4 fully correct,
+4/4 faithful, 4/4 citations valid and supported.
 
 ### Stage 1 — Hybrid search (v0.3.0) — ✅ complete, 2026-11-01
 
@@ -363,6 +414,8 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D4 | ~~Reconcile with `origin/main`~~ | ✅ **Resolved in Stage 0**: rebased, `aa4e065` dropped, PR to `main` open for owner review |
 | D5 | **Fixing the paraphrase weakness** (70% hit@3; cross-encoder scores colloquial questions very low) | Options, cheapest first: (a) LLM query rewriting into document vocabulary, which fits Stage 4 (it already adds rewriting for follow-ups) but costs one LLM call per question; (b) a stronger reranker such as `BAAI/bge-reranker-base` (~280M params, about 3× the image weight and CPU latency), which needs owner approval as a heavier model; (c) more/better embeddings. Recommendation: (a) in Stage 4, measured on the paraphrase slice. |
 | D6 | ~~CI retrieval gate 90% vs 89% with owner paraphrases~~ | ✅ **Resolved**: gate lowered to 85%, a regression guard below the current 89% baseline rather than a target |
+| D7 | **Finishing the generation eval under a 20 req/day free tier** (needs ~50 calls) | (a) Resume over 2–3 days; the cache makes each day continue where the last stopped (no cost). (b) Judge on a different Gemini model: quotas are per model, so this doubles daily capacity *and* removes self-preference bias. (c) Enable billing with a spend cap: a full run is ~50 calls × ~2–3k tokens, likely cents. Spending money is the owner's call. Recommendation: (b), plus (a) if needed. **Awaiting owner.** |
+| D8 | **Live demo (Stage 5) quota**: 20 req/day on the free tier would be used up by a few visitors | Paid tier with a budget cap, or a higher-quota model for the public demo, plus per-key rate limiting and answer caching. Decide before Stage 5. |
 | D3 | Gemini model lifetime | Default is now **`gemini-3.8-flash`** (Stage 0.5). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 
 ---
@@ -432,6 +485,9 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 | 2026-11-01 | Repeat section header on sub-chunks | Fixed an ID-linking failure (INC-2024-01 CAPA) at the cost of one rank-1→2 swap |
 | 2026-11-01 | Keep `ms-marco-MiniLM-L-6` reranker | L-12 was mixed (no cutoff): same hit@3 (43/47), better MRR (0.887 vs 0.858), worse on IDs (19/20 vs 20/20), larger image. No hit gain to justify it |
 | 2026-11-01 | `MIN_RERANK_SCORE` −6.0 → −10.25, chosen on a held-out tune split, documented as a cost filter | −6 wrongly refused 8/47 answerable questions; −10.9 (picked on the full set) was rejected because it was tuned on its own test set; the grounded prompt is the real refusal mechanism |
+| 2026-11-01 | Custom Gemini LLM-as-judge (one structured call per answer) over RAGAS | Free-tier quota, no heavy dependency stack, readable rubric; checked by planted-flaw calibration |
+| 2026-11-01 | Daily-quota 429 fails fast (no retries) | Backoff can't help with a quota that resets in ~20 h; it only burned 11 minutes |
+| 2026-11-01 | `LLM_TIMEOUT_S` 30 → 60 s (judge 120 s) | It is the server-side deadline; 30 s caused 504s on gemini-3.8-flash |
 | 2026-11-01 | CI retrieval gate 90% → 85% (D6) | A gate should catch regressions from the current baseline (89%), not be a target already missed |
 | 2026-11-01 | Pin tune/test splits in the eval files | Adding questions must never move existing ones between splits, or a held-out threshold silently stops being held out |
 | 2026-11-01 | Report attribution leave-one-out at the final config, with counts | A sequential ladder makes each step's gain depend on the order; counts avoid overstating small samples |
