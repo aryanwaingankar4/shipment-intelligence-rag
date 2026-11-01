@@ -1,0 +1,44 @@
+=== GDP COMPLIANCE GUIDE — NEXACHAIN BIOMED ===
+Document ID: DOC-CG-2024 | Version: 4.0 | Based on WHO GDP and CDSCO guidelines.
+
+=== SECTION 1 — SHIPMENT DOCUMENTATION ===
+A signed Delivery Order is mandatory before any dispatch.
+The shipment log must be updated within 24 hours of dispatch.
+Every shipment must include: tax Invoice, Certificate of Analysis (CoA), temperature log, and batch/expiry information.
+Temperature data loggers must be activated at origin before loading.
+For refrigerated items the driver must sign the Cold Chain Handover Form.
+A Delivery Order without QA sign-off is treated as void.
+
+=== SECTION 2 — TEMPERATURE MONITORING ===
+Cold chain products (2-8°C): if temperature exceeds 10°C at any point, quarantine immediately, notify QA within 2 hours, and do not release until the QA investigation is complete.
+Frozen products (-20°C or below): if temperature rises above -10°C, the consignment is automatically rejected and a destruction record must be raised within 48 hours.
+Ambient products (15-25°C): if temperature exceeds 30°C for 4 or more continuous hours, report to the warehouse supervisor and QA issues a deviation report.
+All temperature loggers must be calibrated every 6 months by an accredited lab.
+Logger calibration certificates are retained for 3 years.
+
+=== SECTION 3 — WAREHOUSE COMPLIANCE ===
+Cold storage units are validated annually using IQ, OQ, and PQ protocols.
+Pest control is performed monthly; inventory reconciliation is performed quarterly.
+FIFO (First In First Out) is mandatory for all product storage.
+Rejected or expired stock is moved to a segregated quarantine zone labelled DO NOT USE.
+All warehouse staff complete GDP refresher training annually.
+Temperature mapping of each cold room is repeated every 2 years.
+
+=== SECTION 4 — SHIPMENT DELAY PROTOCOL ===
+For any delay exceeding 48 hours, QA must reassess product integrity before acceptance.
+For delayed cold chain shipments, temperature logs must be reviewed before acceptance.
+The customer must be notified of any delay exceeding 24 hours.
+If a delay is caused by vehicle breakdown, a backup validated vehicle must be dispatched within 6 hours.
+
+=== SECTION 5 — RETURNS AND RECALLS ===
+Returns are accepted only within 30 days of delivery.
+Returned products are quarantined and cannot be restocked without QA approval.
+In a recall, affected batches must be identified within 4 hours.
+The distribution list is retrieved from the NexaChain traceability system.
+CDSCO must be notified within 72 hours of a confirmed recall.
+
+=== SECTION 6 — PENALTIES ===
+Shipment log not updated within 24 hours: Warning plus Rs. 5,000 penalty.
+Releasing product without QA clearance after a breach: license suspension.
+Falsifying temperature records: termination plus legal action.
+Repeated GDP training non-completion: removal from cold chain duties.

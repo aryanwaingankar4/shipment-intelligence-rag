@@ -1,0 +1,26 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# local data produced at runtime
+data/chroma_db/
+*.log
+query_logs.csv
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,65 @@
+=== PRODUCT MANUAL — NEXACHAIN BIOMED ===
+Document ID: DOC-PM-2024 | Version: 3.1 | Effective: 01-Jan-2024
+All products WHO-GMP certified and Schedule M compliant.
+Quality contact: quality@nexachain-biomed.com | +91-20-4000-1100
+
+=== PRODUCT TL-COLD-9001 — CryoVial Injectable Solution ===
+Product code: TL-COLD-9001
+Trade name: CryoVial Injectable Solution
+Category: Cold Chain Pharmaceutical (Schedule H)
+Manufacturer: NexaChain BioMed Pvt Ltd, Pune
+Primary supplier: MedSupply India Pvt Ltd, Pune
+Storage condition: 2°C to 8°C, below 60% relative humidity, dark conditions
+Shelf life: 24 months from date of manufacture
+Packaging: 5 ml glass vial | 10 vials per carton | 50 cartons per case | gross weight 12.5 kg
+Excursion rule: Discard if exposed above 10°C for more than 2 continuous hours.
+Handling rule: Do not freeze. Once removed from refrigeration, use within 6 hours.
+Transport: Validated cold box with PCM packs and a calibrated data logger per case.
+
+=== PRODUCT TL-DRY-4402 — StableCap Dry Powder ===
+Product code: TL-DRY-4402
+Trade name: StableCap Dry Powder
+Category: Ambient Temperature Pharmaceutical
+Manufacturer: NexaChain BioMed Pvt Ltd, Pune
+Primary supplier: Deccan Pharma Logistics, Pune
+Storage condition: 15°C to 25°C, below 45% relative humidity
+Shelf life: 36 months from date of manufacture
+Packaging: 100 g sealed pouch | 20 pouches per carton | 8 kg per case
+Excursion rule: Report if above 30°C for 4 or more continuous hours.
+Handling rule: Keep away from moisture. Silica gel sachet included. Do not open until point of use.
+
+=== PRODUCT TL-FROZ-7700 — FreezeGuard Biological Sample Kit ===
+Product code: TL-FROZ-7700
+Trade name: FreezeGuard Biological Sample Kit
+Category: Frozen Pharmaceutical / Biological
+Manufacturer: NexaChain BioMed Pvt Ltd, Pune
+Primary supplier: ArcticLine Cold Logistics, Mumbai
+Storage condition: -20°C or below
+Shelf life: 18 months from date of manufacture
+Packaging: 2 ml cryotube | 5 tubes per pack | 100 packs per insulated case
+Excursion rule: Automatically rejected if temperature rises above -10°C.
+Handling rule: Transport on dry ice only. Never use regular ice. Do not refreeze once thawed.
+
+=== PRODUCT TL-COLD-9015 — ImmunoChill Vaccine Vials ===
+Product code: TL-COLD-9015
+Trade name: ImmunoChill Vaccine Vials
+Category: Cold Chain Pharmaceutical (Vaccine)
+Manufacturer: NexaChain BioMed Pvt Ltd, Pune
+Primary supplier: MedSupply India Pvt Ltd, Pune
+Storage condition: 2°C to 8°C, protect from light, do not freeze
+Shelf life: 12 months from date of manufacture
+Packaging: 0.5 ml vial | 20 vials per carton | 40 cartons per case
+Excursion rule: Discard if frozen at any point, or if above 8°C cumulatively for more than 12 hours.
+Handling rule: Vaccine Vial Monitor (VVM) must be checked at every handover.
+
+=== PRODUCT TL-DRY-4410 — OralRehydrate Sachets ===
+Product code: TL-DRY-4410
+Trade name: OralRehydrate Sachets
+Category: Ambient Temperature Pharmaceutical (OTC)
+Manufacturer: NexaChain BioMed Pvt Ltd, Pune
+Primary supplier: Deccan Pharma Logistics, Pune
+Storage condition: below 30°C, dry place
+Shelf life: 30 months from date of manufacture
+Packaging: 21 g sachet | 50 sachets per box | 24 boxes per case
+Excursion rule: No cold chain required; protect from direct sunlight and moisture.
+Handling rule: Stack maximum 8 cases high to avoid pouch crushing.

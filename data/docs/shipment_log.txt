@@ -1,0 +1,67 @@
+=== SHIPMENT LOG FY2024 — NEXACHAIN BIOMED ===
+Document ID: DOC-SL-2024 | All times IST. Origin warehouse: Pune unless noted.
+
+=== SHIPMENT SH-2024-001 ===
+Shipment ID: SH-2024-001 | Product: TL-COLD-9001 | Batch: BATCH-CRY-2401 | Quantity: 200 vials
+Route: Pune to Apollo Hospital Mumbai | Dates: Jan 10-11 | Status: DELIVERED
+Temperature: 3.1°C min / 6.8°C max | No breach
+Accepted by: Ramesh Kulkarni (Pharmacy Manager)
+
+=== SHIPMENT SH-2024-002 ===
+Shipment ID: SH-2024-002 | Product: TL-DRY-4402 | Batch: BATCH-DRY-2402 | Quantity: 500 pouches
+Route: Pune to Medline Distributor Nashik | Dates: Jan 18-19 | Status: DELIVERED
+Temperature: 22°C ambient | No breach
+Accepted by: Priya Shah
+
+=== SHIPMENT SH-2024-003 ===
+Shipment ID: SH-2024-003 | Product: TL-COLD-9001 | Batch: BATCH-CRY-2401 | Quantity: 150 vials
+Route: Pune to Fortis Hospital Hyderabad | Dates: Feb 5-7 | Status: QUARANTINED
+Temperature: 3.5°C min / 11.2°C max | BREACH: exceeded 10°C for 3 hours
+Action: Quarantined | Deviation report DEV-2024-003 raised | Pending QA clearance
+
+=== SHIPMENT SH-2024-004 ===
+Shipment ID: SH-2024-004 | Product: TL-FROZ-7700 | Batch: BATCH-FRZ-2403 | Quantity: 80 packs
+Route: Pune to GenPath Lab Bangalore | Dates: Feb 14-15 | Status: DELIVERED
+Temperature: -22°C min / -18°C max | No breach
+Accepted by: Dr. Anita Rao
+
+=== SHIPMENT SH-2024-005 ===
+Shipment ID: SH-2024-005 | Product: TL-DRY-4402 | Batch: BATCH-DRY-2404 | Quantity: 1000 pouches
+Route: Pune to PharmaPlus Delhi | Dates: Mar 1-4 | Status: DELAYED (truck breakdown)
+Delay: 3 days | Temperature: 24°C ambient | No breach
+QA reassessment: Done, approved | Accepted by: Sandeep Arora
+
+=== SHIPMENT SH-2024-006 ===
+Shipment ID: SH-2024-006 | Product: TL-COLD-9001 | Batch: BATCH-CRY-2405 | Quantity: 300 vials
+Route: Pune to Cipla Hub Chennai | Dates: Mar 20-21 | Status: DELIVERED
+Temperature: 2.9°C min / 7.4°C max | No breach
+Accepted by: Kavitha Nair
+
+=== SHIPMENT SH-2024-007 ===
+Shipment ID: SH-2024-007 | Product: TL-FROZ-7700 | Batch: BATCH-FRZ-2403 | Quantity: 40 packs
+Route: Pune to SciLab Research Kolkata | Dates: Apr 8-9 | Status: REJECTED
+Temperature: -19°C min / -8°C max | BREACH: rose above -10°C
+Action: Full batch rejected | Destruction record DES-2024-007 | CDSCO notified
+
+=== SHIPMENT SH-2024-008 ===
+Shipment ID: SH-2024-008 | Product: TL-COLD-9015 | Batch: BATCH-VAC-2406 | Quantity: 400 vials
+Route: Pune to District Health Office Nagpur | Dates: May 2-3 | Status: DELIVERED
+Temperature: 3.0°C min / 7.9°C max | VVM stage 1 | No breach
+Accepted by: Dr. Meena Joshi
+
+=== SHIPMENT SH-2024-009 ===
+Shipment ID: SH-2024-009 | Product: TL-DRY-4410 | Batch: BATCH-ORS-2407 | Quantity: 60 boxes
+Route: Pune to Relief Camp Pune Rural | Dates: Jun 12 | Status: DELIVERED
+Temperature: 27°C ambient | No breach
+Accepted by: Field Coordinator Vikram Patil
+
+=== SHIPMENT SH-2024-010 ===
+Shipment ID: SH-2024-010 | Product: TL-FROZ-7700 | Batch: BATCH-FRZ-2408 | Quantity: 90 packs
+Route: Pune to GenPath Lab Bangalore | Dates: Jul 5-6 | Status: DELIVERED
+Temperature: -24°C min / -19°C max | No breach
+Accepted by: Dr. Anita Rao
+
+=== SHIPMENT LOG SUMMARY FY2024 ===
+Total shipments: 10 | Delivered: 7 | Quarantined: 1 | Rejected: 1 | Delayed: 1
+Temperature breach count: 2 (SH-2024-003 and SH-2024-007)
+Breach rate: 20% (2 out of 10 shipments)
