@@ -1,5 +1,137 @@
 {
-  "_about": "Paraphrased questions written by the project owner (not derived from the documents). Each case: {\"question\": ..., \"expect_any\": [keywords]} or {\"expect_all\": [...]}; keywords must appear verbatim (case-insensitive) in the chunk that answers it. Tags below are added to every case; tune/test split is assigned automatically.",
-  "default_tags": ["paraphrase", "user"],
-  "cases": []
+  "_about": "Paraphrased questions written by the project owner (not derived from the documents). Each case: {\"question\": ..., \"expect_any\": [keywords]} or {\"expect_all\": [...]}, optional \"expect_sources\": [files]. A passage counts as relevant if it contains the keywords verbatim (case-insensitive) and comes from one of the expected files. \"note\" records judgment calls and is ignored by the loader. Tags below are added to every case; tune/test split is assigned automatically.",
+  "default_tags": [
+    "paraphrase",
+    "user"
+  ],
+  "cases": [
+    {
+      "question": "What went wrong during shipment, and why was it rejected?",
+      "expect_any": [
+        "sublimated",
+        "breach: rose above -10°c"
+      ],
+      "expect_sources": [
+        "incident_report_2024.txt",
+        "shipment_log.txt"
+      ],
+      "note": "Only one shipment was REJECTED (SH-2024-007): temperature rose above -10 °C because the dry ice sublimated. Either the incident RCA or the shipment record answers it.",
+      "split": "tune"
+    },
+    {
+      "question": "How many days can a frozen item last up to?",
+      "expect_any": [
+        "18 months"
+      ],
+      "expect_sources": [
+        "product_manual.txt"
+      ],
+      "note": "Read as shelf life of the frozen SKU TL-FROZ-7700: 18 months. The documents give no figure in days; a good answer says 18 months (~540 days).",
+      "split": "test"
+    },
+    {
+      "question": "What if any shipment is running late from its scheduled time?",
+      "expect_any": [
+        "delay exceeding 24 hours",
+        "delay under 24h"
+      ],
+      "expect_sources": [
+        "compliance_guide.txt",
+        "vendor_list.txt"
+      ],
+      "note": "Two valid answers: the GDP delay protocol (compliance Section 4) or the vendor escalation matrix.",
+      "split": "test"
+    },
+    {
+      "question": "which company delivery is fast? and why?",
+      "expect_any": [
+        "same-day within pune"
+      ],
+      "expect_sources": [
+        "vendor_list.txt"
+      ],
+      "tags": [
+        "comparative"
+      ],
+      "note": "Ambiguous: 'fast' read as shortest SLA window (SafeMove: same-day within Pune). Highest on-time rate would be MedSupply (96%). Comparative across all 4 vendors, like the known aggregate failure.",
+      "split": "tune"
+    },
+    {
+      "question": "what is the max temp for cold chain medicines?",
+      "expect_any": [
+        "2°c to 8°c",
+        "2-8°c"
+      ],
+      "expect_sources": [
+        "product_manual.txt",
+        "compliance_guide.txt"
+      ],
+      "note": "Storage maximum is 8 °C (2-8 °C range); the excursion limit is 10 °C. Either the product spec or the monitoring rule answers it.",
+      "split": "test"
+    },
+    {
+      "question": "how do we change the dry ice problem so it doesn't repeat again?",
+      "expect_any": [
+        "1.5x transit"
+      ],
+      "expect_sources": [
+        "incident_report_2024.txt"
+      ],
+      "note": "CAPA for INC-2024-02: dry ice formula 1.5x transit hours + extended-duration cases.",
+      "split": "tune"
+    },
+    {
+      "question": "can u provide me contact of vendor, to track the shipment?",
+      "expect_any": [
+        "contact person"
+      ],
+      "expect_sources": [
+        "vendor_list.txt"
+      ],
+      "note": "Underspecified: no vendor or shipment named. Any vendor record with a contact counts; an ideal answer asks which shipment or lists the contacts.",
+      "split": "test"
+    },
+    {
+      "question": "what steps to follow if a batch has to pull back from market?",
+      "expect_any": [
+        "in a recall"
+      ],
+      "expect_sources": [
+        "compliance_guide.txt"
+      ],
+      "note": "Recall procedure, compliance Section 5: identify batches within 4 h, distribution list, notify CDSCO within 72 h.",
+      "split": "test"
+    },
+    {
+      "question": "how we maintain temp for medicines?",
+      "expect_any": [
+        "storage condition",
+        "loggers",
+        "cold storage units"
+      ],
+      "expect_sources": [
+        "product_manual.txt",
+        "compliance_guide.txt"
+      ],
+      "tags": [
+        "broad"
+      ],
+      "note": "Very broad: product storage conditions, temperature monitoring/loggers, or warehouse cold-storage validation all answer part of it. Lenient on purpose.",
+      "split": "tune"
+    },
+    {
+      "question": "what is the fine, if we don't follow the storage rules?",
+      "expect_any": [
+        "section 6 — penalties"
+      ],
+      "expect_sources": [
+        "compliance_guide.txt"
+      ],
+      "tags": [
+        "trap"
+      ],
+      "note": "Trap: the documents define NO fine for storage-rule violations. The only monetary penalty is Rs. 5,000 for not updating the shipment log within 24 h. Retrieval should surface the penalties section; the answer must say no storage-specific fine is listed (checked in the generation eval).",
+      "split": "tune"
+    }
+  ]
 }

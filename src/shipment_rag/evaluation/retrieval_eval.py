@@ -5,7 +5,8 @@ Eval files are JSON: either a list of cases, or an object
 
 Case types:
   in-scope      {"question", "expect_any": [...]} or {"expect_all": [...]}, optional "tags"
-                relevant chunk = contains any (or all) of the keywords, case-insensitive
+                relevant chunk = contains any (or all) of the keywords, case-insensitive,
+                and (if "expect_sources" is given) comes from one of those files
   off-domain    {"question", "expect_refusal": true}
                 nothing should clear the rerank threshold (refused before the LLM)
   near-domain   {"question", "expect_refusal": true, "kind": "near_domain"}
@@ -15,6 +16,9 @@ Case types:
 Splits: every case is deterministically assigned to "tune" or "test" (stratified by kind
 and slice, ordered by a hash of the question), unless it sets "split" itself. Thresholds
 are chosen on "tune" and reported on "test" so they aren't tuned on their own test set.
+Committed eval files pin "split" on every case: alternation is recomputed over unpinned
+cases only, so adding questions never moves existing ones between splits. Pin new cases
+once they're added.
 
 Metrics (in-scope): hit@k, MRR@k over the final top-k, candidate recall (a relevant chunk
 reached the reranker at all), false refusals. Gate score = (in-scope hits + off-domain
@@ -38,8 +42,11 @@ class Case:
     expect_all: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     split: str = ""  # tune | test
+    expect_sources: list[str] = field(default_factory=list)  # e.g. ["shipment_log.txt"]
 
-    def is_relevant(self, text: str) -> bool:
+    def is_relevant(self, text: str, source: str | None = None) -> bool:
+        if self.expect_sources and source not in self.expect_sources:
+            return False
         t = text.lower()
         if self.expect_all:
             return all(k.lower() in t for k in self.expect_all)
@@ -151,6 +158,7 @@ def _parse(raw: dict, default_tags: list[str]) -> Case:
         expect_all=raw.get("expect_all", []),
         tags=sorted(set(raw.get("tags", [])) | set(default_tags)),
         split=raw.get("split", ""),
+        expect_sources=raw.get("expect_sources", []),
     )
 
 
@@ -179,13 +187,16 @@ def evaluate(retriever, cases: list[Case]) -> EvalReport:
     for case in cases:
         tr = retriever.trace(case.question)
         rank = next(
-            (i for i, r in enumerate(tr.results, 1) if case.is_relevant(r.text)), None
+            (i for i, r in enumerate(tr.results, 1) if case.is_relevant(r.text, r.source)),
+            None,
         )
         rows.append(
             CaseResult(
                 case=case,
                 rank=rank if case.kind == "in_scope" else None,
-                in_candidates=any(case.is_relevant(c.text) for c in tr.candidates),
+                in_candidates=any(
+                    case.is_relevant(c.text, c.meta.get("source")) for c in tr.candidates
+                ),
                 refused=not tr.results,
                 top_score=tr.top_score,
                 top_source=tr.results[0].source if tr.results else "-",

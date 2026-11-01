@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shipment-rag"
-version = "0.3.1"
+version = "0.3.2"
 description = "Document-grounded RAG assistant for pharmaceutical cold-chain shipments, compliance and vendors."
 readme = "README.md"
 requires-python = ">=3.11"
