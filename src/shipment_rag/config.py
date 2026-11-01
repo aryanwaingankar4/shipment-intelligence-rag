@@ -3,8 +3,9 @@ local .env file), so the same image runs in dev, staging and prod unchanged."""
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,9 +41,14 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     gemini_api_key: SecretStr | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     llm_temperature: float = 0.1
-    llm_max_output_tokens: int = 512
+    # thinking tokens count against this on Gemini 3.x, so leave headroom
+    llm_max_output_tokens: int = 2048
+    # Gemini 3.x thinking control; "" = model default. Grounded Q&A needs little reasoning.
+    llm_thinking_level: Literal["", "minimal", "low", "medium", "high"] = "low"
+    # Gemini 2.5 models use a token budget instead; when set, it overrides the level.
+    llm_thinking_budget: int | None = None
     llm_max_retries: int = 4
     llm_timeout_s: float = 30.0
 
@@ -54,6 +60,11 @@ class Settings(BaseSettings):
 
     company_name: str = "NexaChain BioMed"
     assistant_name: str = "Nova"
+
+    @field_validator("llm_thinking_budget", mode="before")
+    @classmethod
+    def _empty_budget_is_unset(cls, v):
+        return None if v == "" else v
 
     @property
     def api_key_set(self) -> set[str]:

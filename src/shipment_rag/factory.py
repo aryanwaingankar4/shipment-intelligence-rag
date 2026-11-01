@@ -29,6 +29,8 @@ def build_llm(settings: Settings) -> GeminiLLM:
         max_output_tokens=settings.llm_max_output_tokens,
         max_retries=settings.llm_max_retries,
         timeout_s=settings.llm_timeout_s,
+        thinking_level=settings.llm_thinking_level,
+        thinking_budget=settings.llm_thinking_budget,
     )
 
 

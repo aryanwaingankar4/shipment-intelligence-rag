@@ -55,6 +55,8 @@ def create_app(settings: Settings | None = None, pipeline: RAGPipeline | None = 
             from shipment_rag.factory import build_pipeline
 
             app.state.pipeline = build_pipeline(settings)
+            # a retired/misspelled GEMINI_MODEL should stop startup, not fail every request
+            app.state.pipeline.llm.check_model()
             # load model weights now so the first user request isn't slow
             app.state.pipeline.retriever.embedder.warm_up()
             app.state.pipeline.retriever.reranker.warm_up()

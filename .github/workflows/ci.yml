@@ -22,8 +22,10 @@ jobs:
         run: |
           pip install --index-url https://download.pytorch.org/whl/cpu torch
           pip install -e ".[dev]"
+      - name: Secret scan
+        run: python scripts/scan_secrets.py --all
       - name: Lint
-        run: ruff check src tests ui
+        run: ruff check src tests ui scripts
       - name: Unit tests
         run: pytest
       - name: Cache HF models

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from shipment_rag.config import get_settings
+from shipment_rag.llm import ModelNotFoundError
 from shipment_rag.logging_config import configure_logging
 
 
@@ -25,10 +26,20 @@ def cmd_ingest(args) -> int:
 def cmd_ask(args) -> int:
     from shipment_rag.factory import build_pipeline
 
-    result = build_pipeline(get_settings()).answer(args.question)
+    pipeline = build_pipeline(get_settings())
+    pipeline.llm.check_model()
+    result = pipeline.answer(args.question)
     print(result.answer)
     for c in result.sources:
         print(f"  - {c.source} [{c.section}] rerank={c.rerank_score:+.2f}")
+    return 0
+
+
+def cmd_models(args) -> int:
+    from shipment_rag.factory import build_llm
+
+    for name in build_llm(get_settings()).list_models():
+        print(name)
     return 0
 
 
@@ -66,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("question")
     p.set_defaults(func=cmd_ask)
 
+    p = sub.add_parser("models", help="list Gemini models available to GEMINI_API_KEY")
+    p.set_defaults(func=cmd_models)
+
     p = sub.add_parser("eval", help="retrieval quality check (no LLM calls)")
     p.add_argument("--file", default="data/eval/retrieval_eval.json")
     p.add_argument("--min-score", type=float, default=0.9)
@@ -74,7 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = get_settings()
     configure_logging(settings.log_level, json_output=False)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ModelNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

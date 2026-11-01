@@ -26,7 +26,7 @@ answers that cite the company documents and refuse anything outside them.
 | Embeddings | `all-MiniLM-L6-v2` (384-d, normalized) |
 | Vector DB | ChromaDB 1.5.9 (cosine) — embedded locally, server mode in Docker |
 | Rerank | `cross-encoder/ms-marco-MiniLM-L-6-v2`, top-8 → top-3, irrelevance threshold |
-| LLM | Gemini (`gemini-2.5-flash` default) via `google-genai`, retries with backoff |
+| LLM | Gemini (`gemini-3.8-flash` default, low thinking level) via `google-genai`, retries with backoff, fails fast if the model is unavailable |
 | Guardrails | Refuse without an LLM call when nothing relevant is retrieved; strict grounded system prompt |
 
 ## Quick start (Docker — recommended)
@@ -58,7 +58,11 @@ uvicorn shipment_rag.api.main:create_app --factory --port 8080
 streamlit run ui/streamlit_app.py
 ```
 
-Tests and lint: `pytest` and `ruff check src tests ui`.
+Tests and lint: `pytest` and `ruff check src tests ui scripts`.
+
+Secrets: enable the pre-commit scan once per clone with `git config core.hooksPath .githooks`
+(it also runs in CI). Real keys only ever go in `.env`, which is gitignored.
+`shipment-rag models` lists the Gemini models your key can use.
 
 ## Example queries
 

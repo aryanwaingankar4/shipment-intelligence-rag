@@ -5,8 +5,8 @@
 
 | | |
 |---|---|
-| **Current version** | 0.2.1 |
-| **Current phase** | Stage 0 done (git cleanup + Phase 4 close-out) → next: Stage 1 hybrid search |
+| **Current version** | 0.2.2 |
+| **Current phase** | Stage 0.5 done (live-check fixes) → next: Stage 1 hybrid search |
 | **Branch** | `phase-4-productionization`, rebased onto `origin/main`, PR open for review (D4) |
 | **Last updated** | 2026-11-01 |
 | **Owner** | Aryan Waingankar |
@@ -48,7 +48,7 @@ Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | 384-d, normalized, baked into image |
 | Vector DB | ChromaDB 1.5.9 | Embedded (dev) or HTTP server (Docker/prod) |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | `MIN_RERANK_SCORE` = out-of-scope guardrail |
-| LLM | Gemini `gemini-2.5-flash` | tenacity retries on 408/429/5xx, 30 s timeout |
+| LLM | Gemini `gemini-3.8-flash`, thinking level `low`, 2048 max output tokens | tenacity retries on 408/429/5xx, 30 s timeout, warns on `MAX_TOKENS`, fails fast on model 404 |
 | API | FastAPI + uvicorn | `/health`, `/ready`, `/v1/query`, request IDs, JSON logs |
 | UI | Streamlit | Thin client, HTML-escaped rendering, sources shown |
 | Packaging | Docker (API+ingest image, UI image), docker-compose | CPU torch, non-root, healthchecks |
@@ -72,12 +72,35 @@ queue-based ingestion.
 
 | Stage | Scope | Status |
 |---|---|---|
-| 0 | Git cleanup + Phase 4 close-out (D1 rename, live checks) | ✅ done (live Gemini + Docker checks pending, see §4) |
+| 0 | Git cleanup + Phase 4 close-out (D1 rename, live checks) | ✅ done (Docker check pending, see §4) |
+| 0.5 | Fixes from the owner's live check: truncation, model default + 404, secret scanning | ✅ done |
 | 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ⏳ next |
 | 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), nightly workflow | ⬜ |
 | 3 | Structured query path for aggregate shipment questions + router | ⬜ |
 | 4 | SSE streaming + follow-up questions (query rewriting) | ⬜ |
 | 5 | Real login, rate limiting, GHCR images, VM + Caddy deploy, CD | ⬜ (ask before spending money) |
+
+### Stage 0.5 — Live-check fixes (v0.2.2) — ✅ complete, 2026-11-01
+
+Triggered by the owner's live run with `GEMINI_MODEL=gemini-3.8-flash`.
+
+1. **Truncated answers.** Root cause: `LLM_MAX_OUTPUT_TOKENS=512`, and on Gemini 3.x
+   thinking tokens are charged against that same budget. Fix: default raised to **2048**,
+   new `LLM_THINKING_LEVEL` (default **`low`**; grounded Q&A needs little reasoning) and
+   `LLM_THINKING_BUDGET` for 2.5-series models. A `finish_reason == MAX_TOKENS` now logs a
+   warning with thought vs answer token counts and a hint. Note: a local `.env` copied
+   from the old template still pinned 512; that override was the actual cause in the run.
+2. **Model default + fail fast.** Default `GEMINI_MODEL=gemini-3.8-flash` (confirmed present
+   in the live model list). `check_model()` (a metadata call, no generation quota) runs at
+   API startup and before `shipment-rag ask`; a 404 raises `ModelNotFoundError` with
+   instructions instead of failing every request. New `shipment-rag models` lists the
+   models the key can use. D3 updated.
+3. **Secret scanning.** The Stage 0 incident (an `AQ.`-format key in `.env.example`) slipped
+   past a grep that only knew `AIza…`. New dependency-free `scripts/scan_secrets.py`:
+   known formats (Google `AIza`/`AQ.`, GitHub, `sk-` style, AWS, Slack, private keys) plus
+   generic high-entropy detection (secret-named assignments and long mixed-case tokens),
+   masked output, exact-match allowlist (`.secret-scan-allow`). It runs in CI on all tracked
+   files, as a unit test, and as an opt-in pre-commit hook (`.githooks/pre-commit`).
 
 ### Stage 0 — Git cleanup + Phase 4 close-out (v0.2.1) — ✅ complete, 2026-11-01
 
@@ -169,6 +192,18 @@ Bugs / weaknesses fixed from the prototype:
 
 ## 4. Verification
 
+### Stage 0.5 (v0.2.2) — 2026-11-01
+
+| Check | Result |
+|---|---|
+| `ruff check src tests ui scripts` | ✅ clean |
+| `pytest` | ✅ 46/46 (new: 7 LLM-client tests with a stubbed SDK client, 18 secret-scanner tests) |
+| Live `shipment-rag ask "Why was SH-2024-007 rejected?"` on `gemini-3.8-flash` | ✅ complete answer (no truncation), grounded, cited [1]/[2]; sources: incident report + 2 shipment-log sections; 2 transient errors retried automatically |
+| Live model 404 (`GEMINI_MODEL=gemini-9.9-nonexistent`) | ✅ exits with the `ModelNotFoundError` message, no retries |
+| `shipment-rag models` | ✅ lists `gemini-3.8-flash` |
+| `scan_secrets.py --all` on tracked files | ✅ clean (1 known non-secret allowlisted: notebook Drive file ID) |
+| Scanner catches the Stage 0 key format on a real `.env` | ✅ flagged, masked |
+
 ### Stage 0 (v0.2.1) — 2026-11-01
 
 | Check | Result |
@@ -213,7 +248,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D1 | ~~Brand mismatch (docs "TraceLink BioMed" vs UI "NexaChain BioMed")~~ | ✅ **Resolved in Stage 0** — docs renamed to NexaChain BioMed |
 | D2 | Where to host first | See Phase 5 options below. Cheapest credible path: one small VM + docker compose + Caddy (HTTPS). |
 | D4 | ~~Reconcile with `origin/main`~~ | ✅ **Resolved in Stage 0**: rebased, `aa4e065` dropped, PR to `main` open for owner review |
-| D3 | Gemini model lifetime | `gemini-2.5-flash` is the default; Google retires models regularly — check the model list before each release and change `GEMINI_MODEL`. |
+| D3 | Gemini model lifetime | Default is now **`gemini-3.8-flash`** (Stage 0.5). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 
 ---
 
@@ -223,6 +258,8 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 ### Phase 5 — Security + first real deployment (next)
 - [x] **P0** Remove the GitHub token embedded in the local git remote URL; use `gh auth login` instead. *(done by owner, Stage 0)*
+- [ ] **P0** Confirm the Gemini key exposed in Stage 0 (sha256 prefix `67023945746a`) is **deleted** in AI Studio, not just superseded, and that `.env` holds the new key.
+- [ ] **P1** Enable the secret-scan pre-commit hook locally: `git config core.hooksPath .githooks`.
 - [ ] **P0** Replace the Streamlit demo login with real auth (OIDC/SSO via an auth proxy such as oauth2-proxy, or Streamlit's native `st.login`).
 - [ ] **P0** Set `API_KEYS` / `API_KEY` in every non-dev environment; store secrets in a secret manager, not `.env` on disk.
 - [ ] **P0** HTTPS in front of UI and API (Caddy / cloud load balancer). Don't expose Chroma publicly.
@@ -269,6 +306,9 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-01 | Default `gemini-3.8-flash`, thinking level `low`, 2048 output tokens | Thinking tokens share the output budget on 3.x; grounded answers need little reasoning, so a low level keeps latency and cost down while 2048 leaves headroom |
+| 2026-11-01 | Validate the model at startup with `models.get` | Costs no generation quota; turns a silent per-request failure into one clear startup error |
+| 2026-11-01 | In-repo, dependency-free secret scanner instead of gitleaks/detect-secrets | No new dependency or binary; known formats plus entropy covers this repo; easy to explain. Revisit if the repo grows |
 | 2026-11-01 | Rename brand to NexaChain BioMed in docs; keep `TL-` SKU codes | Persona and knowledge agree; no real company referenced. SKUs are IDs used across shipments/eval |
 | 2026-11-01 | Rebase onto `origin/main` instead of merge; drop duplicate-screenshot commit | Linear history; remote already had identical images under cleaner names |
 | 2026-11-01 | Don't present the notebook's 7/8 as a "before" number | Different eval set and not reproducible (re-run gives 8/8); comparisons must be on the same set and the same index |
