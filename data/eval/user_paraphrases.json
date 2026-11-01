@@ -53,7 +53,7 @@
       "tags": [
         "comparative"
       ],
-      "note": "Ambiguous: 'fast' read as shortest SLA window (SafeMove: same-day within Pune). Highest on-time rate would be MedSupply (96%). Comparative across all 4 vendors, like the known aggregate failure.",
+      "note": "'Fast' = shortest delivery window (confirmed by owner): SafeMove, same-day within Pune. Comparative across all 4 vendors, like the known aggregate failure.",
       "split": "tune"
     },
     {

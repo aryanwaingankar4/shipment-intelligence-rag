@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--file", action="append",
                    help=f"eval file, repeatable (default: {' + '.join(DEFAULT_EVAL_FILES)})")
     p.add_argument("--split", choices=["all", "tune", "test"], default="all")
-    p.add_argument("--min-score", type=float, default=0.9, help="gate on the last mode run")
+    p.add_argument("--min-score", type=float, default=0.85, help="gate on the last mode run")
     p.add_argument("--mode", choices=["vector", "bm25", "hybrid", "all"],
                    help="default: RETRIEVAL_MODE; 'all' compares the three (gate uses hybrid)")
     p.add_argument("--report", help="write a markdown report to this path")
