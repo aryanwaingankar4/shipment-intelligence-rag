@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | **Current version** | 0.3.2 |
-| **Current phase** | Stage 2 (generation eval) in progress: judge and calibration pass; 5/26 golden questions scored before the Gemini daily quota ran out; citation checker has a false-alarm problem on real answers (D9) |
+| **Current phase** | Stage 2 (generation eval) in progress: judge and calibration pass; 5/26 golden questions scored before the Gemini daily quota ran out; waiting for quota to finish |
 | **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local) |
 | **Last updated** | 2026-11-02 |
 | **Owner** | Aryan Waingankar |
@@ -109,17 +109,22 @@ queue-based ingestion.
 - **The partial citation score (2/4) is wrong.** Every citation in G01-G04 was read by hand and
   is correct. NLI gave a false alarm on 7 of 9 real cited sentences, because full-length chunks
   hold several rules (G04: 0.002 against the passage, 0.996 against the rule's own line) and bare
-  bullets like "Tax Invoice" are not statements. A scratch prototype (whole passage OR any single
-  line, bullets read with their lead-in) got 13/13 on calibration and 8/9 on those real sentences,
-  but is not adopted: see D9. It was not run on F1-F6.
+  bullets like "Tax Invoice" are not statements.
+- **D9 fix, approved by the owner:** supported if the whole passage OR any single line reaches 0.9,
+  and bullets are read with their intro line. Fresh full-length cases
+  (`citation_holdout_full.json`, passages verbatim from the index, committed in `d7ac70d` before
+  their only run): **12/12**, 5/5 wrong citations caught, 0/7 false alarms
+  (`reports/stage2_citation_holdout_full.md`). Calibration still 35/35. Each check now takes about
+  1.8 s (it scores every line) instead of 0.08 s. Still small hand-written sets: the hand-label
+  check below is the measure on real answers.
+- **`eval-gen.yml` is manual only.** Runners have no Ollama, so it judges with Gemini and its
+  numbers are not comparable with the README's.
 
-**Resume plan:** decide D9, then `shipment-rag eval-gen --report
-data/eval/reports/stage2_generation.md`. Calibration and the 4 generated answers come from cache; 21
-questions remain, some of which are refused at retrieval and need no Gemini call. Then finish the
-README results, verification table and the bump to 0.4.0.
-
-**Open for the nightly workflow:** `eval-gen.yml` still judges with Gemini, as GitHub's runners have
-no Ollama. It needs a decision before it can be relied on.
+**Resume plan:** `shipment-rag eval-gen --report data/eval/reports/stage2_generation.md`.
+Calibration and the 4 generated answers come from cache; 21 questions remain, some of which are
+refused at retrieval and need no Gemini call. Then hand-label every cited sentence in the golden
+answers without looking at NLI's verdicts and report agreement. Then finish the README results,
+verification table and the bump to 0.4.0.
 
 **Built**
 - `data/eval/golden_qa.json`: 26 questions written fresh (not reused from the retrieval
@@ -469,7 +474,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D5 | **Fixing the paraphrase weakness** (70% hit@3; cross-encoder scores colloquial questions very low) | Options, cheapest first: (a) LLM query rewriting into document vocabulary, which fits Stage 4 (it already adds rewriting for follow-ups) but costs one LLM call per question; (b) a stronger reranker such as `BAAI/bge-reranker-base` (~280M params, about 3× the image weight and CPU latency), which needs owner approval as a heavier model; (c) more/better embeddings. Recommendation: (a) in Stage 4, measured on the paraphrase slice. |
 | D6 | ~~CI retrieval gate 90% vs 89% with owner paraphrases~~ | ✅ **Resolved**: gate lowered to 85%, a regression guard below the current 89% baseline rather than a target |
 | D7 | Finishing the generation eval under a 20 req/day free tier | ✅ **Decided: (b)**, judge on a different model. Pro models aren't usable on this free tier, so the judge is `gemini-3.7-flash`; calibration gates the scoring. Resumes day by day from the cache. |
-| D9 | **NLI citation false alarms on full-length chunks** (7 of 9 real sentences wrongly rejected) | Awaiting owner. Proposed: whole passage OR any single line, bullets read with their lead-in, tested on new cases using untrimmed chunks; hand-label the golden citations and report agreement |
+| D9 | ~~NLI citation false alarms on full-length chunks~~ | ✅ **Resolved**: whole passage OR any single line at 0.9, bullets read with their intro; 12/12 on fresh full-length cases. Hand-label agreement on golden answers still to report |
 | D8 | **Live demo (Stage 5) quota**: 20 req/day on the free tier would be used up by a few visitors | Paid tier with a budget cap, or a higher-quota model for the public demo, plus per-key rate limiting and answer caching. Decide before Stage 5. |
 | D3 | Gemini model lifetime | Default is now **`gemini-3.8-flash`** (Stage 0.5). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 
@@ -536,6 +541,8 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 |---|---|---|
 | 2026-11-02 | Local `qwen2.5:7b` judge via Ollama (owner decision) | Free-tier Gemini was too unreliable to judge with; no quota, and independent of the answer model |
 | 2026-11-02 | Check citations one at a time, NLI at 0.9 minimum entailment (owner decision) | The judge could not match `[n]` to passages; NLI is about 200x faster with no false alarms on the hand-written cases. False alarms on real chunks are open (D9) |
+| 2026-11-02 | NLI scores the whole passage and each line (owner decision, D9) | Multi-rule chunks made NLI answer neutral on correct claims; 12/12 on fresh full-length cases on the first try |
+| 2026-11-02 | `eval-gen.yml` manual only (owner decision) | Runners have no Ollama, so a nightly run would judge differently from the published results |
 | 2026-11-02 | C4 stretched-claim citation is a known limit, not gated (owner decision) | No cutoff separates it from correct sentences (0.979 vs 0.982), and the judge still catches that answer |
 | 2026-11-01 | Default `RETRIEVAL_MODE=hybrid` over BM25-only | Equal on hit@3 overall but BM25 collapses on paraphrases (40% vs 70%) and has the lowest candidate recall (87% vs 98%) |
 | 2026-11-01 | BM25 derived from Chroma in memory (rank-bm25), not a second store | One source of truth, no new service; corpus is tiny |
