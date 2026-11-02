@@ -112,7 +112,7 @@ def main() -> int:
                  "measured accuracy.\n\n" if args.holdout else
                  "This set is small and was also used to choose the checker, so treat a pass as "
                  "necessary, not as a measured accuracy.\n\n")
-              "## Per sentence\n\n" + "\n".join(detail) + "\n")
+              + "## Per sentence\n\n" + "\n".join(detail) + "\n")
     print("\n" + report)
     if args.report:
         Path(args.report).write_text(report, encoding="utf-8")
