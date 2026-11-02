@@ -9,6 +9,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,8 +32,16 @@ class QueryRequest(BaseModel):
 class SourceOut(BaseModel):
     source: str
     section: str
-    rerank_score: float
+    rerank_score: float | None  # None when the source is a shipment-table row
     snippet: str
+
+
+class StructuredQueryOut(BaseModel):
+    """What the table was asked, so an exact answer can be checked."""
+
+    template: str
+    params: dict
+    rows: list[dict]
 
 
 class QueryResponse(BaseModel):
@@ -41,6 +50,8 @@ class QueryResponse(BaseModel):
     sources: list[SourceOut]
     latency_ms: int
     request_id: str
+    route: Literal["documents", "shipment_table"]  # which path answered
+    structured_query: StructuredQueryOut | None = None
 
 
 def create_app(settings: Settings | None = None, pipeline: RAGPipeline | None = None) -> FastAPI:
@@ -142,6 +153,8 @@ def create_app(settings: Settings | None = None, pipeline: RAGPipeline | None = 
             ],
             latency_ms=result.latency_ms,
             request_id=rid,
+            route=result.route,
+            structured_query=result.structured_query,
         )
 
     return app

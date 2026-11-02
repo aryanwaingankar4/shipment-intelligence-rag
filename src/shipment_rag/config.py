@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # repeat the section header on sub-split chunks (see chunker.chunk_document)
     chunk_section_headers: bool = True
 
+    # answer exact shipment questions (counts, lists, field lookups) from a table, no LLM call
+    structured_queries: bool = True
+
     # --- vector store: set CHROMA_HOST to use a Chroma server, else embedded on disk ---
     chroma_host: str | None = None
     chroma_port: int = 8000

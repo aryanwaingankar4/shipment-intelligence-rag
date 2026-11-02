@@ -1,12 +1,18 @@
 """Wires concrete components together from Settings (the only place that does)."""
 
+import logging
+
 from shipment_rag.config import Settings
 from shipment_rag.embeddings import Embedder, Reranker
 from shipment_rag.evaluation.citation_check import LLMSupportChecker, NLISupportChecker
 from shipment_rag.llm import GeminiLLM, OllamaLLM
 from shipment_rag.pipeline import RAGPipeline
 from shipment_rag.retrieval import Retriever
+from shipment_rag.structured.router import StructuredRouter
+from shipment_rag.structured.store import ShipmentStore
 from shipment_rag.vectorstore import get_collection
+
+log = logging.getLogger(__name__)
 
 
 def build_retriever(settings: Settings, collection=None) -> Retriever:
@@ -65,6 +71,17 @@ def build_citation_checker(settings: Settings, llm) -> LLMSupportChecker | NLISu
     return LLMSupportChecker(llm)
 
 
+def build_structured_router(settings: Settings) -> StructuredRouter | None:
+    """None if turned off or the log can't be loaded: the document path still answers."""
+    if not settings.structured_queries:
+        return None
+    try:
+        return StructuredRouter(ShipmentStore.from_file(settings.docs_path / "shipment_log.txt"))
+    except (OSError, ValueError) as exc:
+        log.warning("shipment table unavailable, using documents only", extra={"error": str(exc)})
+        return None
+
+
 def build_pipeline(
     settings: Settings, retriever: Retriever | None = None, llm=None
 ) -> RAGPipeline:
@@ -73,4 +90,5 @@ def build_pipeline(
         llm=llm or build_llm(settings),
         company=settings.company_name,
         assistant=settings.assistant_name,
+        structured=build_structured_router(settings),
     )

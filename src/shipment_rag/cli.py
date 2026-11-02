@@ -32,8 +32,10 @@ def cmd_ask(args) -> int:
     pipeline.llm.check_model()
     result = pipeline.answer(args.question)
     print(result.answer)
+    print(f"  answered from: {result.route}")
     for c in result.sources:
-        print(f"  - {c.source} [{c.section}] rerank={c.rerank_score:+.2f}")
+        score = "" if c.rerank_score is None else f" rerank={c.rerank_score:+.2f}"
+        print(f"  - {c.source} [{c.section}]{score}")
     return 0
 
 
@@ -150,7 +152,9 @@ def cmd_eval_gen(args) -> int:
               "(fix the judge or rubric, or pass --skip-calibration-gate)", file=sys.stderr)
         return 1
 
-    pipeline = build_pipeline(settings, llm=answer_llm)
+    # The golden set measures the document path (retrieval + LLM), so the table is left out.
+    pipeline = build_pipeline(settings.model_copy(update={"structured_queries": False}),
+                              llm=answer_llm)
     results = ge.run(pipeline, judge_llm, checker, items)
     s = ge.summarize(results)
     table = ge.summary_table(s)

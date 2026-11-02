@@ -28,6 +28,7 @@ answers that cite the company documents and refuse anything outside them.
 | Candidates | **Hybrid** (`RETRIEVAL_MODE=hybrid`): vector top-8 + BM25 top-8 with an ID-aware tokenizer, fused by reciprocal rank fusion → 12 candidates |
 | Rerank | `cross-encoder/ms-marco-MiniLM-L-6-v2` → top-3, junk filter at `MIN_RERANK_SCORE=-10.25` (chosen on a held-out split) |
 | LLM | Gemini (`gemini-3.8-flash` default, low thinking level) via `google-genai`, retries with backoff, fails fast if the model is unavailable |
+| Exact questions | Counts, lists, totals and field lookups on shipments come from a read-only SQLite table, with no LLM call. Rule-based router; anything it doesn't fully understand goes to the documents |
 | Guardrails | Refuse without an LLM call when nothing relevant is retrieved; strict grounded system prompt |
 
 ## Quick start (Docker — recommended)
@@ -74,6 +75,7 @@ Secrets: enable the pre-commit scan once per clone with `git config core.hooksPa
 | Why was shipment SH-2024-007 rejected? | Rose above −10 °C in transit; dry ice sublimated (insufficient quantity, wrong case) |
 | Within how many hours must CDSCO be notified of a recall? | 72 hours of a confirmed recall |
 | What is the capital of France? | Refused before calling the LLM (no passage clears the reranker threshold) |
+| How many vials of TL-COLD-9001 were shipped in total? | 650 vials across 3 shipments, computed from the shipment table with no LLM call |
 
 <p>
   <img src="assets/chat1.png" alt="Chat example 1" width="49%">
@@ -182,6 +184,29 @@ Reproduce (reports in `data/eval/reports/`):
 `shipment-rag tune-threshold`, and `python scripts/retrieval_experiments.py`.
 Owner-written paraphrases go in `data/eval/user_paraphrases.json` and are included automatically.
 
+### Exact shipment questions (no LLM)
+
+A language model is the wrong tool for "how many" or "which shipments": retrieval only returns the
+top 3 passages, so an answer can't see all 10 records. Those questions now go to a table built from
+`data/docs/shipment_log.txt`, and the API and UI show which path answered.
+
+- **Safe by construction:** neither users nor the LLM write SQL. There is a fixed set of query
+  templates with bound parameters, and the connection refuses anything but reads.
+- **Conservative router:** plain rules, and it only claims a question if it understands every word.
+  "How many shipments went to Tokyo?" and "breach rate in Q3" go to the documents rather than being
+  answered as if the unknown part weren't there.
+
+| Check (offline, in `pytest`) | Result |
+|---|---|
+| Table totals vs the log's own summary line (10 total, 7 delivered, 1 quarantined, 1 rejected, 1 delayed, 2 breaches) | match |
+| `data/eval/structured_eval.json`: table questions answered correctly | 29/29 |
+| Same file: questions that must stay on the document path | 19/19 |
+| All 102 existing eval questions: claimed by the table | 10, all correct when checked against the log |
+
+`structured_eval.json` was written alongside the router, so 29/29 and 19/19 are regression tests, not
+an independent measure. The 102 existing questions predate the router, which makes them the better
+check that it doesn't over-claim. It has one data source so far: only the shipment log is a table.
+
 ## API
 
 ```http
@@ -190,14 +215,16 @@ X-API-Key: <key>            # required when API_KEYS is set
 {"question": "Which shipments breached temperature?", "custom_instructions": ""}
 ```
 
-Response: `answer`, `refused`, `sources[] {source, section, rerank_score, snippet}`,
+Response: `answer`, `refused`, `route` (`documents` or `shipment_table`), `sources[] {source,
+section, rerank_score, snippet}`, `structured_query {template, params, rows}` (table answers only),
 `latency_ms`, `request_id`. Ops endpoints: `GET /health` (liveness), `GET /ready`
 (index reachable and non-empty).
 
 ## Layout
 
 ```
-src/shipment_rag/   config, ingestion/, embeddings, vectorstore, retrieval, llm, pipeline, api/, cli
+src/shipment_rag/   config, ingestion/, embeddings, vectorstore, retrieval, structured/, llm,
+                    pipeline, api/, cli
 ui/                 Streamlit front end (separate image)
 data/docs/          knowledge base (source of truth for the index)
 data/eval/          evaluation sets; reports/ holds generated eval reports
