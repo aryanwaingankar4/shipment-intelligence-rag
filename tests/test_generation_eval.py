@@ -235,3 +235,17 @@ def test_cache_short_circuits_after_daily_quota_but_still_serves_hits(tmp_path):
         c.generate("s", "new 2")  # no API attempt
     assert llm.calls == calls_before
     assert c.generate("s", "cached") == "answer to cached"  # cache still served
+
+
+def test_cli_output_survives_a_redirected_windows_console(monkeypatch):
+    import io
+    import sys
+
+    from shipment_rag.cli import utf8_output
+
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
+    utf8_output()
+    print("correctness ≤ 0")
+    sys.stdout.flush()
+    assert "≤" in raw.getvalue().decode("utf-8")

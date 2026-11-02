@@ -1,4 +1,5 @@
-"""Gemini client (google-genai SDK) with retries on transient failures.
+"""LLM clients: Gemini (google-genai SDK, retries on transient failures) for answers, and a
+local Ollama client that eval-gen can use as its judge.
 
 The old `google-generativeai` package used in the Colab notebook is deprecated;
 `google-genai` is its supported successor.
@@ -8,6 +9,7 @@ import logging
 import time
 from typing import Protocol
 
+import httpx
 from tenacity import (
     retry,
     retry_if_exception,
@@ -60,12 +62,12 @@ def _is_long_quota(exc: BaseException) -> bool:
 
 
 class ModelNotFoundError(LLMUnavailableError):
-    """GEMINI_MODEL doesn't exist or isn't available to this API key."""
+    """The configured model doesn't exist or isn't available."""
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, message: str | None = None):
         super().__init__(
-            f"Gemini model '{model}' was not found (HTTP 404). It may be retired or not "
-            "enabled for this API key. Set GEMINI_MODEL to an available model; "
+            message or f"Gemini model '{model}' was not found (HTTP 404). It may be retired or "
+            "not enabled for this API key. Set GEMINI_MODEL to an available model; "
             "`shipment-rag models` lists them."
         )
 
@@ -225,6 +227,106 @@ class GeminiLLM:
                 ) from exc
             log.exception("llm call failed")
             raise LLMUnavailableError(str(exc)) from exc
+        if not text:
+            raise LLMUnavailableError("empty response from model")
+        return text
+
+
+class OllamaLLM:
+    """A local model served by Ollama: no quota and no dependence on a hosted API.
+
+    Fails loudly rather than returning a damaged reply: a cut-off answer or a prompt that did
+    not fit the context window raises, so it is never cached or scored as a verdict.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str = "http://localhost:11434",
+        temperature: float = 0.0,
+        max_output_tokens: int = 1024,
+        num_ctx: int = 4096,
+        seed: int = 42,
+        timeout_s: float = 600.0,  # CPU inference, and the first call also loads the model
+        transport: httpx.BaseTransport | None = None,
+    ):
+        self.model = model
+        self.base_url = base_url
+        self.temperature = temperature
+        self.max_output_tokens = max_output_tokens
+        self.num_ctx = num_ctx
+        self.seed = seed
+        self.digest = ""  # set by check_model: a re-pulled tag must not reuse old verdicts
+        self.usage = {"calls": 0, "prompt_tokens": 0, "output_tokens": 0, "thought_tokens": 0,
+                      "seconds": 0.0, "max_seconds": 0.0}
+        self._client = httpx.Client(base_url=base_url, timeout=timeout_s, transport=transport)
+
+    def _not_pulled(self) -> ModelNotFoundError:
+        return ModelNotFoundError(
+            self.model, f"Ollama has no model '{self.model}'. Run: ollama pull {self.model}"
+        )
+
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        try:
+            return self._client.request(method, path, **kwargs)
+        except httpx.HTTPError as exc:
+            raise LLMUnavailableError(
+                f"Ollama not reachable at {self.base_url} ({type(exc).__name__}). "
+                "Is it running?"
+            ) from exc
+
+    def check_model(self) -> None:
+        """Fail fast if the server is down or the model has not been pulled."""
+        resp = self._request("GET", "/api/tags")
+        if resp.status_code >= 400:
+            raise LLMUnavailableError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
+        for m in resp.json().get("models", []):
+            if m.get("name") == self.model:
+                self.digest = m.get("digest", "")[:12]
+                return
+        raise self._not_pulled()
+
+    def cache_identity(self) -> dict:
+        return {"provider": "ollama", "model": self.model, "digest": self.digest,
+                "temperature": self.temperature, "max_output_tokens": self.max_output_tokens,
+                "num_ctx": self.num_ctx, "seed": self.seed}
+
+    def generate(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
+        body = {
+            "model": self.model,
+            "stream": False,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+            "options": {"temperature": self.temperature, "seed": self.seed,
+                        "num_predict": self.max_output_tokens, "num_ctx": self.num_ctx},
+        }
+        if json_schema:
+            body["format"] = json_schema
+        t0 = time.perf_counter()
+        resp = self._request("POST", "/api/chat", json=body)
+        if resp.status_code == 404:
+            raise self._not_pulled()
+        if resp.status_code >= 400:
+            raise LLMUnavailableError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+
+        seconds = time.perf_counter() - t0
+        prompt_tokens = data.get("prompt_eval_count", 0) or 0
+        self.usage["calls"] += 1
+        self.usage["seconds"] = round(self.usage["seconds"] + seconds, 1)
+        self.usage["max_seconds"] = round(max(self.usage["max_seconds"], seconds), 1)
+        self.usage["prompt_tokens"] += prompt_tokens
+        self.usage["output_tokens"] += data.get("eval_count", 0) or 0
+
+        if data.get("done_reason") == "length":
+            raise LLMUnavailableError(
+                f"Ollama reply hit the output limit ({self.max_output_tokens} tokens)"
+            )
+        if prompt_tokens > self.num_ctx - self.max_output_tokens:
+            raise LLMUnavailableError(
+                f"prompt of {prompt_tokens} tokens may not fit num_ctx={self.num_ctx}"
+            )
+        text = ((data.get("message") or {}).get("content") or "").strip()
         if not text:
             raise LLMUnavailableError("empty response from model")
         return text

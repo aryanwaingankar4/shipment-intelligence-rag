@@ -11,7 +11,8 @@ Questions refused at retrieval (no LLM answer) are scored by rule, without a jud
 Why a custom judge instead of RAGAS: one cached call per answer fits the Gemini free tier
 (RAGAS faithfulness makes several calls per answer), no langchain/datasets dependency stack,
 and a rubric small enough to read. The judge itself is checked against hand-made flawed
-answers (`judge_calibration.json`) before its scores are trusted.
+answers (`judge_calibration.json`) before its scores are trusted. The judge runs on Gemini or
+on a local Ollama model (JUDGE_PROVIDER), which has no quota and no hosted-API outages.
 """
 
 import json

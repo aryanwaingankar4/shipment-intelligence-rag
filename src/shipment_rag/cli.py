@@ -99,25 +99,37 @@ def cmd_eval(args) -> int:
 
 
 def cmd_eval_gen(args) -> int:
-    """Generation eval: full pipeline answers scored by an LLM judge (uses Gemini quota)."""
+    """Generation eval: pipeline answers (Gemini quota) scored by an LLM judge."""
     import hashlib
     from datetime import date
 
     from shipment_rag.evaluation import generation_eval as ge
     from shipment_rag.evaluation.llm_cache import CachedLLM, RateLimiter
     from shipment_rag.factory import build_judge_llm, build_llm, build_pipeline
+    from shipment_rag.llm import LLMUnavailableError
 
     settings = get_settings()
     items = ge.load_golden(Path(args.file))[: args.limit or None]
-    limiter = RateLimiter(args.rpm or settings.eval_rpm)  # shared: answers + judge
+    limiter = RateLimiter(args.rpm or settings.eval_rpm)  # Gemini calls only
+    local_judge = settings.judge_provider == "ollama"
     rubric = hashlib.sha256((ge.JUDGE_SYSTEM + ge.JUDGE_PROMPT + json.dumps(
         ge.JUDGE_SCHEMA, sort_keys=True)).encode()).hexdigest()[:8]
     cache = settings.eval_cache_dir
-    answer_llm = CachedLLM(build_llm(settings), cache, "answer", limiter, not args.no_cache)
-    judge_llm = CachedLLM(build_judge_llm(settings), cache, f"judge-{rubric}", limiter,
-                          not args.no_cache)
-    answer_llm.check_model()
-    judge_llm.check_model()
+    judge_llm = CachedLLM(build_judge_llm(settings), cache, f"judge-{rubric}",
+                          None if local_judge else limiter, not args.no_cache)
+    try:
+        judge_llm.check_model()
+        answer_llm = None
+        if not args.calibration_only:  # calibrating a local judge needs no Gemini at all
+            answer_llm = CachedLLM(build_llm(settings), cache, "answer", limiter,
+                                   not args.no_cache)
+            answer_llm.check_model()
+    except LLMUnavailableError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    judge_desc = (f"`{judge_llm.model}` (local via Ollama, digest {judge_llm.digest})"
+                  if local_judge else
+                  f"`{judge_llm.model}` (thinking {settings.judge_thinking_level or 'default'})")
     # Calibrate the judge first: its scores are only used if it catches every planted flaw.
     cal = [] if args.no_calibration else ge.run_calibration(
         judge_llm, json.loads(Path(args.calibration).read_text(encoding="utf-8")))
@@ -136,8 +148,7 @@ def cmd_eval_gen(args) -> int:
     table = ge.summary_table(s)
     print(table)
     cost = (f"Answer model `{answer_llm.model}`: {answer_llm.misses} API calls, "
-            f"{answer_llm.hits} from cache; judge `{judge_llm.model}` "
-            f"(thinking {settings.judge_thinking_level or 'default'}): {judge_llm.misses} API "
+            f"{answer_llm.hits} from cache; judge {judge_desc}: {judge_llm.misses} "
             f"calls, {judge_llm.hits} from cache. Tokens this run: answers "
             f"{answer_llm.usage}, judge {judge_llm.usage}.")
     print("\n" + cost)
@@ -152,8 +163,8 @@ def cmd_eval_gen(args) -> int:
             f"# Generation eval — {date.today().isoformat()}\n\n"
             f"Golden set `{Path(args.file).as_posix()}` ({len(items)} questions). "
             f"Answers: `{answer_llm.model}` (thinking {settings.llm_thinking_level or 'default'}"
-            f", temperature {settings.llm_temperature}). Judge: `{judge_llm.model}` (thinking "
-            f"{settings.judge_thinking_level or 'default'}, temperature 0, rubric `{rubric}`). "
+            f", temperature {settings.llm_temperature}). Judge: {judge_desc}, temperature 0, "
+            f"rubric `{rubric}`. "
             f"Retrieval: {settings.retrieval_mode}, MIN_RERANK_SCORE={settings.min_rerank_score}, "
             f"top-{settings.final_k}.\n{partial}\n"
             f"## Summary\n\n{table}\n\n"
@@ -164,8 +175,9 @@ def cmd_eval_gen(args) -> int:
             f"## Answers that lost points\n\n{ge.failures_section(results)}\n\n"
             f"## Cost\n\n{cost}\n\n"
             "## Caveats\n\n"
-            "- The judge is an LLM; when it is the same model family as the answerer it may "
-            "favour its own style. The calibration table above is the check on that.\n"
+            "- The judge is an LLM and makes mistakes. The calibration table above checks it "
+            "only on the flaw types planted there, so spot-check verdicts in the per-question "
+            "table, especially with a small local judge.\n"
             "- Small sample: each slice has only a handful of questions, so treat single "
             "questions as anecdotes and look at the per-question table.\n"
             "- Key-fact recall is a strict string match and undercounts paraphrased facts; "
@@ -224,6 +236,13 @@ def cmd_tune_threshold(args) -> int:
     return 0
 
 
+def utf8_output() -> None:
+    """Reports contain non-ASCII (≤, °C); Windows uses cp1252 when output is redirected."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="shipment-rag")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -273,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = get_settings()
     configure_logging(settings.log_level, json_output=False)
+    utf8_output()
     try:
         return args.func(args)
     except ModelNotFoundError as exc:

@@ -19,12 +19,12 @@ dependencies = [
     "tenacity>=8.2,<10",
     "langchain-text-splitters>=0.3,<2",
     "rank-bm25>=0.2.2,<0.3",
+    "httpx>=0.27",                # Ollama judge client; already installed via google-genai
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
-    "httpx>=0.27",
     "ruff>=0.6",
 ]
 

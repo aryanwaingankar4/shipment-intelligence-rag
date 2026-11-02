@@ -67,9 +67,11 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 60.0
 
     # --- generation eval (shipment-rag eval-gen) ---
-    judge_model: str = ""  # empty = same as GEMINI_MODEL
-    judge_thinking_level: Literal["", "minimal", "low", "medium", "high"] = "medium"
-    eval_rpm: float = 8.0  # max uncached LLM calls per minute (answers + judge combined)
+    judge_provider: Literal["gemini", "ollama"] = "gemini"
+    judge_model: str = ""  # gemini: empty = same as GEMINI_MODEL; ollama: required
+    ollama_base_url: str = "http://localhost:11434"
+    judge_thinking_level: Literal["", "minimal", "low", "medium", "high"] = "medium"  # gemini
+    eval_rpm: float = 8.0  # max uncached Gemini calls per minute (a local judge is not limited)
     eval_cache_dir: Path = Path("data/eval/.cache")
 
     # --- API ---
