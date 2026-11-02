@@ -5,6 +5,8 @@ passage(s) it cites, so the checker never has to work out which passage is numbe
 a small local judge got wrong when it saw all the passages at once).
 
 Two interchangeable checkers: an LLM asked one question, or a small NLI cross-encoder.
+A retrieved chunk often holds several unrelated rules, which makes NLI answer "neutral" even when
+one of them states the claim exactly, so NLI scores the whole passage and each line of it.
 Known limits:
 - A claim that stretches what a passage says can pass: calibration case C4 ("breaking the storage
   rules carries a fine of Rs. 5,000", citing a penalty that is only for a late shipment log) scores
@@ -72,9 +74,18 @@ class SupportChecker(Protocol):
 def cited_claims(answer: str) -> list[CitedClaim]:
     """Each sentence that carries [n] markers. 'Fact. [1]' counts the same as 'Fact [1].'"""
     text = _MARKERS_AFTER_PUNCT.sub(lambda m: f"{m.group(2)}{m.group(1)}", answer)
-    claims = []
+    claims, intro = [], ""
     for line in text.splitlines():
-        for sentence in _SENTENCE_END.split(_LIST_PREFIX.sub("", line)):
+        if not line.strip():
+            continue
+        if _LIST_PREFIX.match(line):  # a bullet alone ("Tax Invoice") is not a statement
+            line = f"{intro} {_LIST_PREFIX.sub('', line)}".strip()
+        else:
+            intro = ""
+            if line.rstrip().endswith(":") and not _MARKER.search(line):
+                intro = line.strip().rstrip(":")
+                continue
+        for sentence in _SENTENCE_END.split(line):
             markers = [int(n) for n in _MARKER.findall(sentence)]
             if markers:
                 claim = re.sub(r"\s+", " ", _MARKER.sub("", sentence))
@@ -102,6 +113,16 @@ def citation_label(checks: list[CitationCheck]) -> str:
     return "all_supported" if all(c.supported for c in checks) else "some_unsupported"
 
 
+def _premises(passage: str) -> list[str]:
+    """The whole passage, then each line with its section header kept for context."""
+    premises = [passage]
+    for block in passage.split("\n\n"):
+        lines = [line for line in block.splitlines() if line.strip()]
+        header = lines[0] if lines and lines[0].startswith("===") else ""
+        premises += [f"{header}\n{line}" if header else line for line in lines if line != header]
+    return list(dict.fromkeys(premises))
+
+
 class LLMSupportChecker:
     def __init__(self, llm):
         self.llm = llm
@@ -117,7 +138,7 @@ class LLMSupportChecker:
 
 
 class NLISupportChecker:
-    """Supported means P(entailment) for (passage, claim) is at least min_entailment."""
+    """Supported means P(entailment) reaches min_entailment for the whole passage or any line."""
 
     def __init__(self, model_name: str, min_entailment: float = 0.9):
         self.model_name = model_name
@@ -135,8 +156,12 @@ class NLISupportChecker:
         return {int(i): label.lower() for i, label in self._model.config.id2label.items()}
 
     def supports(self, passage: str, claim: str) -> tuple[bool, str]:
-        logits = [float(s) for s in self._model.predict([(passage, claim)])[0]]
-        total = sum(math.exp(s) for s in logits)
-        probs = {self._labels[i]: math.exp(s) / total for i, s in enumerate(logits)}
-        entailment = probs["entailment"]
-        return entailment >= self.min_entailment, f"entailment {entailment:.3f}"
+        premises = _premises(passage)
+        best = max(self._entailment(row) for row in self._model.predict(
+            [(premise, claim) for premise in premises]))
+        return best >= self.min_entailment, f"entailment {best:.3f}"
+
+    def _entailment(self, logits) -> float:
+        values = [float(s) for s in logits]
+        total = sum(math.exp(s) for s in values)
+        return {self._labels[i]: math.exp(s) / total for i, s in enumerate(values)}["entailment"]

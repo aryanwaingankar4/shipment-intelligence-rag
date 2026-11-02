@@ -7,6 +7,7 @@ from shipment_rag.evaluation.citation_check import (
     SUPPORT_SCHEMA,
     LLMSupportChecker,
     NLISupportChecker,
+    _premises,
     check_citations,
     citation_label,
     cited_claims,
@@ -42,11 +43,30 @@ def test_abbreviations_and_decimals_do_not_split_a_sentence():
     assert c.claim == "It reached 11.2°C and cost Rs. 5,000 at Medco Pvt. Ltd."
 
 
-def test_bullets_are_split_and_unmarked_lines_are_ignored():
-    claims = cited_claims("The rules are:\n- Log it [1]\n* Tell QA [2]\n1. Hold it [1]\nDone.")
+def test_bullets_are_read_with_their_intro_line():
+    claims = cited_claims("The rules are:\n- Log it [1]\n\n* Tell QA [2]\n1. Hold it [1]\nDone.")
     assert [(c.markers, c.claim) for c in claims] == [
-        ([1], "Log it"), ([2], "Tell QA"), ([1], "Hold it")
+        ([1], "The rules are Log it"), ([2], "The rules are Tell QA"),
+        ([1], "The rules are Hold it"),
     ]
+
+
+def test_intro_line_ends_at_the_next_ordinary_line():
+    claims = cited_claims("Rules:\n- Log it [1]\nAlso note this [1].\n- Tell QA [2]")
+    assert [c.claim for c in claims] == ["Rules Log it", "Also note this.", "Tell QA"]
+
+
+def test_intro_line_with_its_own_citation_is_an_ordinary_claim():
+    claims = cited_claims("It needs two forms [1]:\n- Form A\n- Form B")
+    assert [(c.markers, c.claim) for c in claims] == [([1], "It needs two forms:")]
+
+
+def test_nli_premises_are_the_passage_and_each_line_with_its_header():
+    assert _premises("=== A ===\nrule one\nrule two\n\n=== B ===\nrule three") == [
+        "=== A ===\nrule one\nrule two\n\n=== B ===\nrule three",
+        "=== A ===\nrule one", "=== A ===\nrule two", "=== B ===\nrule three",
+    ]
+    assert _premises("no header") == ["no header"]
 
 
 def test_checker_sees_only_the_cited_passage():
@@ -109,7 +129,7 @@ def test_nli_checker_needs_the_minimum_entailment_in_the_models_label_order():
             self.scores = scores
 
         def predict(self, pairs):
-            return [self.scores]
+            return [self.scores] * len(pairs)
 
     def checker(scores):
         c = NLISupportChecker("fake")
@@ -122,6 +142,23 @@ def test_nli_checker_needs_the_minimum_entailment_in_the_models_label_order():
     assert checker([0.1, 0.2, 5.0]).supports("p", "c")[0] is False
     # top label is entailment but the model is unsure (calibration case C8): not supported
     assert checker([-1.0, 1.0, 0.9]).supports("p", "c")[0] is False
+
+
+def test_nli_checker_accepts_a_claim_stated_by_one_line_of_a_long_passage():
+    class FakeConfig:
+        id2label = {0: "contradiction", 1: "entailment", 2: "neutral"}
+
+    class FakeModel:
+        config = FakeConfig()
+
+        def predict(self, pairs):
+            return [[0.0, 5.0, 0.0] if p == "=== S ===\nthe rule" else [0.0, 0.0, 5.0]
+                    for p, _ in pairs]
+
+    c = NLISupportChecker("fake")
+    c.__dict__["_model"] = FakeModel()
+    assert c.supports("=== S ===\nanother rule\nthe rule", "claim")[0] is True
+    assert c.supports("=== S ===\nanother rule", "claim")[0] is False
 
 
 def test_factory_builds_the_configured_checker():

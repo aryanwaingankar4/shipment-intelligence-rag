@@ -1,8 +1,10 @@
 name: Generation eval
 
 # Answer-quality eval with an LLM judge. Uses Gemini quota, so it is NOT part of per-PR CI:
-# it runs nightly and on demand. Responses are cached (keyed by prompt + model settings), so
-# a nightly run with no changes to the docs, golden set, prompts or code makes ~0 API calls.
+# it runs only when started by hand. Responses are cached (keyed by prompt + model settings), so
+# a run with no changes to the docs, golden set, prompts or code makes ~0 API calls.
+# The results in the README use a local Ollama judge; runners have no Ollama, so this workflow
+# judges with Gemini (JUDGE_PROVIDER defaults to gemini) and its numbers are not comparable.
 
 on:
   workflow_dispatch:
@@ -10,8 +12,6 @@ on:
       limit:
         description: "Only the first N golden questions (empty = all)"
         required: false
-  schedule:
-    - cron: "30 2 * * *"  # 02:30 UTC
 
 concurrency:
   group: eval-gen
