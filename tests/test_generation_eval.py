@@ -46,6 +46,16 @@ class ScriptedJudge:
         return json.dumps(self.verdict)
 
 
+class AlwaysSupported:
+    name = "always"
+
+    def supports(self, passage, claim):
+        return True, ""
+
+
+CHECKER = AlwaysSupported()
+
+
 def answered(text, context):
     return RAGAnswer(text, context, refused=False, latency_ms=5, context=context,
                      llm_called=True)
@@ -55,7 +65,7 @@ def test_answer_is_judged_with_numbered_passages_and_deterministic_checks():
     ctx = [chunk("shipment_log.txt"), chunk("vendor_list.txt", "SLA: 36 hours")]
     pipe = FakePipeline({"question G1": answered("It is 36 hours [2].", ctx)})
     judge = ScriptedJudge()
-    [r] = ge.run(pipe, judge, [item("G1")])
+    [r] = ge.run(pipe, judge, CHECKER, [item("G1")])
     _, prompt, schema = judge.calls[0]
     assert "[2] (source: vendor_list.txt)\nSLA: 36 hours" in prompt
     assert schema == ge.JUDGE_SCHEMA
@@ -67,7 +77,7 @@ def test_retrieval_refusal_is_scored_by_rule_without_a_judge_call():
     refused = RAGAnswer("I don't have enough information...", [], refused=True, latency_ms=1)
     pipe = FakePipeline({"question R": refused, "question T": refused, "question A": refused})
     judge = ScriptedJudge()
-    results = ge.run(pipe, judge, [item("R", "refusal"), item("T", "trap"), item("A")])
+    results = ge.run(pipe, judge, CHECKER, [item("R", "refusal"), item("T", "trap"), item("A")])
     assert judge.calls == []
     assert [r.verdict.correctness for r in results] == [2, 1, 0]
     assert all(r.retrieval_refused and r.verdict.by_rule for r in results)
@@ -76,7 +86,7 @@ def test_retrieval_refusal_is_scored_by_rule_without_a_judge_call():
 def test_invalid_citation_index_and_wrong_source_are_detected():
     ctx = [chunk("shipment_log.txt")]
     pipe = FakePipeline({"question G": answered("Answer [1] and [3].", ctx)})
-    [r] = ge.run(pipe, ScriptedJudge(), [item("G")])
+    [r] = ge.run(pipe, ScriptedJudge(), CHECKER, [item("G")])
     assert not r.citations_valid
     assert not r.cited_expected_source  # only shipment_log was cited; vendor_list expected
 
@@ -84,7 +94,7 @@ def test_invalid_citation_index_and_wrong_source_are_detected():
 def test_errors_are_recorded_and_run_stops_after_repeated_failures():
     items = [item(f"E{i}") for i in range(5)]
     pipe = FakePipeline({f"question E{i}": LLMUnavailableError("429") for i in range(5)})
-    results = ge.run(pipe, ScriptedJudge(), items, max_consecutive_errors=3)
+    results = ge.run(pipe, ScriptedJudge(), CHECKER, items, max_consecutive_errors=3)
     assert [bool(r.error) for r in results] == [True] * 5
     assert "not run" in results[3].error and "not run" in results[4].error
     assert ge.summarize(results)["n_scored"] == 0
@@ -127,10 +137,10 @@ def test_calibration_compares_judge_to_planted_flaws():
             "expect": {"correctness_max": 0, "faithful": False}}
     good = ScriptedJudge({"is_refusal": False, "correctness": 0, "unsupported_claims": ["48"],
                           "faithful": False, "citations": "some_unsupported", "reason": ""})
-    [c] = ge.run_calibration(good, [case])
+    [c] = ge.run_calibration(good, CHECKER, [case])
     assert all(ok for _, ok in c["checks"])
     lenient = ScriptedJudge()  # says everything is fine
-    [c] = ge.run_calibration(lenient, [case])
+    [c] = ge.run_calibration(lenient, CHECKER, [case])
     assert not any(ok for _, ok in c["checks"])
     assert "0/2" in ge.calibration_table([c])
 
@@ -200,14 +210,14 @@ def test_daily_quota_skips_items_but_keeps_scoring_what_needs_no_new_call():
                          "question Q2": refused,  # refused at retrieval: no LLM needed
                          "question Q3": QuotaExhaustedError("daily")})
     items = [item("Q0"), item("Q1"), item("Q2", "refusal"), item("Q3")]
-    results = ge.run(pipe, ScriptedJudge(), items, max_consecutive_errors=2)
+    results = ge.run(pipe, ScriptedJudge(), CHECKER, items, max_consecutive_errors=2)
     assert [r.verdict is not None for r in results] == [False, False, True, False]
     assert all("not run" in r.error for r in (results[0], results[1], results[3]))
 
     case = {"id": "C", "flaw": "x", "question": "q", "reference_answer": "r",
             "passages": [], "answer": "a", "expect": {"faithful": True}}
     judge = ScriptedJudge(exc=QuotaExhaustedError("daily"))
-    cal = ge.run_calibration(judge, [case, dict(case, id="D")])
+    cal = ge.run_calibration(judge, CHECKER, [case, dict(case, id="D")])
     assert len(judge.calls) == 1 and "not run" in cal[1]["error"]
     assert "(0/2 cases scored)" in ge.calibration_table(cal)
     assert not ge.calibration_passed(cal)
@@ -249,3 +259,34 @@ def test_cli_output_survives_a_redirected_windows_console(monkeypatch):
     print("correctness ≤ 0")
     sys.stdout.flush()
     assert "≤" in raw.getvalue().decode("utf-8")
+
+
+def test_calibration_checks_each_cited_sentence():
+    class SecondFails(AlwaysSupported):
+        def supports(self, passage, claim):
+            return "Second" not in claim, ""
+
+    case = {"id": "C8", "flaw": "one wrong citation", "question": "q", "reference_answer": "r",
+            "passages": [{"source": "v.txt", "text": "p"}], "answer": "First [1]. Second [1].",
+            "expect": {"citation_claims": [True, False]}}
+    [c] = ge.run_calibration(ScriptedJudge(), SecondFails(), [case])
+    assert c["checks"] == [("citation 1 supported = True", True),
+                           ("citation 2 supported = False", True)]
+    assert c["verdict"].citations == "some_unsupported"
+    [c] = ge.run_calibration(ScriptedJudge(), CHECKER, [case])
+    assert c["checks"][1] == ("citation 2 supported = False", False)
+    assert not ge.calibration_passed([c])
+    # a split that finds the wrong number of sentences must fail, not pass silently
+    [c] = ge.run_calibration(ScriptedJudge(), CHECKER, [dict(case, answer="Only one [1].")])
+    assert c["checks"] == [("2 cited sentences found", False)]
+
+
+def test_known_limit_is_shown_but_does_not_fail_the_gate():
+    case = {"id": "C4", "flaw": "stretched claim", "question": "q", "reference_answer": "r",
+            "passages": [{"source": "v.txt", "text": "p"}], "answer": "A stretched claim [1].",
+            "expect": {"correctness_min": 2, "known_limit_citation_claims": [False]}}
+    [c] = ge.run_calibration(ScriptedJudge(), CHECKER, [case])
+    assert c["known_limits"] == [("citation 1 supported = False", False)]
+    assert ge.calibration_passed([c])
+    assert "known limit, not gated: citation 1 supported = False ❌" in ge.calibration_table([c])
+

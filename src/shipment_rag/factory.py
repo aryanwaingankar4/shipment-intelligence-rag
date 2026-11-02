@@ -2,6 +2,7 @@
 
 from shipment_rag.config import Settings
 from shipment_rag.embeddings import Embedder, Reranker
+from shipment_rag.evaluation.citation_check import LLMSupportChecker, NLISupportChecker
 from shipment_rag.llm import GeminiLLM, OllamaLLM
 from shipment_rag.pipeline import RAGPipeline
 from shipment_rag.retrieval import Retriever
@@ -55,6 +56,13 @@ def build_judge_llm(settings: Settings) -> GeminiLLM | OllamaLLM:
         timeout_s=max(settings.llm_timeout_s, 120.0),  # judge thinks longer
         thinking_level=settings.judge_thinking_level,
     )
+
+
+def build_citation_checker(settings: Settings, llm) -> LLMSupportChecker | NLISupportChecker:
+    """Per-citation support check for eval-gen. llm is only used by the 'llm' checker."""
+    if settings.citation_checker == "nli":
+        return NLISupportChecker(settings.nli_model, settings.nli_min_entailment)
+    return LLMSupportChecker(llm)
 
 
 def build_pipeline(

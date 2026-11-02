@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     judge_model: str = ""  # gemini: empty = same as GEMINI_MODEL; ollama: required
     ollama_base_url: str = "http://localhost:11434"
     judge_thinking_level: Literal["", "minimal", "low", "medium", "high"] = "medium"  # gemini
+    citation_checker: Literal["llm", "nli"] = "nli"  # llm = the judge model, one call per citation
+    nli_model: str = "cross-encoder/nli-deberta-v3-small"
+    nli_min_entailment: float = 0.9
     eval_rpm: float = 8.0  # max uncached Gemini calls per minute (a local judge is not limited)
     eval_cache_dir: Path = Path("data/eval/.cache")
 

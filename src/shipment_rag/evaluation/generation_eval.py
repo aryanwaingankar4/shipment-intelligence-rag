@@ -4,8 +4,9 @@ Per question:
 - Deterministic (no LLM): key-fact recall, citation validity ([n] points at a passage that
   exists), whether a cited passage comes from an expected source file.
 - One LLM-judge call with a fixed rubric and JSON output: refusal detection, correctness
-  against the reference answer (0/1/2), unsupported claims (faithfulness), and whether each
-  cited passage supports the sentence citing it.
+  against the reference answer (0/1/2) and unsupported claims (faithfulness).
+- One support check per cited sentence (see citation_check.py): does the cited passage support
+  the sentence citing it?
 Questions refused at retrieval (no LLM answer) are scored by rule, without a judge call.
 
 Why a custom judge instead of RAGAS: one cached call per answer fits the Gemini free tier
@@ -22,6 +23,11 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from shipment_rag.evaluation.citation_check import (
+    CitationCheck,
+    check_citations,
+    citation_label,
+)
 from shipment_rag.llm import LLMUnavailableError, QuotaExhaustedError
 
 log = logging.getLogger(__name__)
@@ -62,9 +68,6 @@ Score the answer:
 - unsupported_claims: every factual claim in the answer that the passages do not support
   (saying that information is unavailable is not a claim). Empty list if none.
 - faithful: true if and only if unsupported_claims is empty.
-- citations: "all_supported" if every [n] marker points to a passage that supports the
-  sentence it is attached to; "some_unsupported" if any marker does not (or points to a
-  passage that does not exist); "no_citations" if the answer has no [n] markers.
 - reason: one or two sentences explaining the scores."""
 
 JUDGE_SCHEMA = {
@@ -74,12 +77,9 @@ JUDGE_SCHEMA = {
         "correctness": {"type": "integer", "enum": [0, 1, 2]},
         "unsupported_claims": {"type": "array", "items": {"type": "string"}},
         "faithful": {"type": "boolean"},
-        "citations": {"type": "string",
-                      "enum": ["all_supported", "some_unsupported", "no_citations"]},
         "reason": {"type": "string"},
     },
-    "required": ["is_refusal", "correctness", "unsupported_claims", "faithful",
-                 "citations", "reason"],
+    "required": ["is_refusal", "correctness", "unsupported_claims", "faithful", "reason"],
 }
 
 _CITATION = re.compile(r"\[(\d+)\]")
@@ -105,6 +105,7 @@ class Verdict:
     citations: str
     reason: str
     by_rule: bool = False  # True when scored without a judge call
+    citation_checks: list[CitationCheck] = field(default_factory=list)
 
 
 @dataclass
@@ -163,7 +164,15 @@ def judge(judge_llm, question, item_type, reference, passages, answer) -> Verdic
     )
     raw = judge_llm.generate(JUDGE_SYSTEM, prompt, json_schema=JUDGE_SCHEMA)
     data = json.loads(raw)
-    return Verdict(**{k: data[k] for k in JUDGE_SCHEMA["required"]})
+    return Verdict(**{k: data[k] for k in JUDGE_SCHEMA["required"]}, citations="no_citations")
+
+
+def score_answer(judge_llm, checker, question, item_type, reference, passages, answer) -> Verdict:
+    """The judge's verdict, plus a support check for each cited sentence."""
+    verdict = judge(judge_llm, question, item_type, reference, passages, answer)
+    verdict.citation_checks = check_citations(checker, answer, [text for _, text in passages])
+    verdict.citations = citation_label(verdict.citation_checks)
+    return verdict
 
 
 def rule_verdict(item: GoldenItem) -> Verdict:
@@ -174,7 +183,7 @@ def rule_verdict(item: GoldenItem) -> Verdict:
                    by_rule=True)
 
 
-def run(pipeline, judge_llm, items: list[GoldenItem], max_consecutive_errors: int = 3
+def run(pipeline, judge_llm, checker, items: list[GoldenItem], max_consecutive_errors: int = 3
         ) -> list[GenResult]:
     results, consecutive, stop_reason = [], 0, ""
     for item in items:
@@ -194,8 +203,8 @@ def run(pipeline, judge_llm, items: list[GoldenItem], max_consecutive_errors: in
                 res.verdict = rule_verdict(item)
             else:
                 passages = [(c.source, c.text) for c in out.context]
-                res.verdict = judge(judge_llm, item.question, item.type,
-                                    item.reference_answer, passages, out.answer)
+                res.verdict = score_answer(judge_llm, checker, item.question, item.type,
+                                           item.reference_answer, passages, out.answer)
             consecutive = 0
         except QuotaExhaustedError as exc:
             # Keep going: cached answers/judgments are still served and retrieval refusals
@@ -217,7 +226,7 @@ def calibration_passed(cal: list[dict]) -> bool:
     )
 
 
-def run_calibration(judge_llm, cases: list[dict]) -> list[dict]:
+def run_calibration(judge_llm, checker, cases: list[dict]) -> list[dict]:
     """Score hand-made answers with known flaws; report where the judge agrees."""
     out, stopped = [], False
     for c in cases:
@@ -229,8 +238,8 @@ def run_calibration(judge_llm, cases: list[dict]) -> list[dict]:
         item_type = "refusal" if c["expect"].get("is_refusal") else (
             "trap" if "trap" in c["flaw"] else "answerable")
         try:
-            v = judge(judge_llm, c["question"], item_type, c["reference_answer"],
-                      passages, c["answer"])
+            v = score_answer(judge_llm, checker, c["question"], item_type,
+                             c["reference_answer"], passages, c["answer"])
         except (LLMUnavailableError, json.JSONDecodeError, KeyError) as exc:
             out.append({"id": c["id"], "flaw": c["flaw"], "checks": [], "error": str(exc)[:200]})
             stopped = isinstance(exc, QuotaExhaustedError)
@@ -245,12 +254,21 @@ def run_calibration(judge_llm, cases: list[dict]) -> list[dict]:
             checks.append((f"correctness ≥ {want}", v.correctness >= want))
         if "faithful" in e:
             checks.append((f"faithful = {e['faithful']}", v.faithful == e["faithful"]))
-        if "citations_support" in e:
-            want = "all_supported" if e["citations_support"] else "some_unsupported"
-            checks.append((f"citations = {want}", v.citations == want))
+        if "citation_claims" in e:  # expected result for each cited sentence, in order
+            got = [check.supported for check in v.citation_checks]
+            if len(got) != len(e["citation_claims"]):
+                checks.append((f"{len(e['citation_claims'])} cited sentences found", False))
+            else:
+                checks += [(f"citation {i} supported = {want}", g == want) for i, (want, g)
+                           in enumerate(zip(e["citation_claims"], got, strict=True), 1)]
         if "is_refusal" in e:
             checks.append((f"is_refusal = {e['is_refusal']}", v.is_refusal == e["is_refusal"]))
-        out.append({"id": c["id"], "flaw": c["flaw"], "checks": checks, "verdict": v})
+        # Accepted weaknesses stay visible in the table but do not count towards the gate.
+        known = [(f"citation {i} supported = {want}", g == want) for i, (want, g) in enumerate(
+            zip(e.get("known_limit_citation_claims", []),
+                [check.supported for check in v.citation_checks], strict=False), 1)]
+        out.append({"id": c["id"], "flaw": c["flaw"], "checks": checks, "known_limits": known,
+                    "verdict": v})
     return out
 
 
@@ -305,7 +323,7 @@ def summary_table(s: dict) -> str:
         ("answer has ≥1 [n] citation", _f(*s["has_citation"])),
         ("all citation numbers valid", _f(*s["citations_valid"])),
         ("cites a passage from an expected source file", _f(*s["cited_expected_source"])),
-        ("judge: every cited passage supports its sentence", _f(*s["citations_supported"])),
+        ("every cited passage supports its sentence", _f(*s["citations_supported"])),
         ("**Should refuse** (unanswerable / off-domain)", ""),
         ("refused", _f(*s["refused_correctly"])),
         ("of which refused at retrieval (no LLM answer call)", _f(*s["refused_at_retrieval"])),
@@ -353,7 +371,10 @@ def failures_section(results: list[GenResult]) -> str:
                    f"- Reference: {_cell(r.item.reference_answer, 300)}\n"
                    f"- Judge: correctness {r.verdict.correctness}/2, "
                    f"faithful {r.verdict.faithful}, citations {r.verdict.citations}. "
-                   f"{_cell(r.verdict.reason, 300)}\n")
+                   f"{_cell(r.verdict.reason, 300)}\n"
+                   + "".join(f"- Unsupported citation {c.markers}: {_cell(c.claim, 200)} "
+                             f"({_cell(c.detail, 120)})\n"
+                             for c in r.verdict.citation_checks if not c.supported))
     return "\n".join(out)
 
 
@@ -364,6 +385,9 @@ def calibration_table(cal: list[dict]) -> str:
             lines.append(f"| {c['id']} | {c['flaw']} | error: {_cell(c['error'], 80)} |")
             continue
         checks = ", ".join(f"{name} {'✅' if ok else '❌'}" for name, ok in c["checks"])
+        known = ", ".join(f"{name} {'✅' if ok else '❌'}"
+                          for name, ok in c.get("known_limits", []))
+        checks += f"; known limit, not gated: {known}" if known else ""
         lines.append(f"| {c['id']} | {c['flaw']} | {checks} |")
     passed = sum(ok for c in cal for _, ok in c["checks"])
     total = sum(len(c["checks"]) for c in cal)

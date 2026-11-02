@@ -105,7 +105,12 @@ def cmd_eval_gen(args) -> int:
 
     from shipment_rag.evaluation import generation_eval as ge
     from shipment_rag.evaluation.llm_cache import CachedLLM, RateLimiter
-    from shipment_rag.factory import build_judge_llm, build_llm, build_pipeline
+    from shipment_rag.factory import (
+        build_citation_checker,
+        build_judge_llm,
+        build_llm,
+        build_pipeline,
+    )
     from shipment_rag.llm import LLMUnavailableError
 
     settings = get_settings()
@@ -127,12 +132,15 @@ def cmd_eval_gen(args) -> int:
     except LLMUnavailableError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    citation_llm = CachedLLM(judge_llm.llm, cache, "citation",
+                             None if local_judge else limiter, not args.no_cache)
+    checker = build_citation_checker(settings, citation_llm)
     judge_desc = (f"`{judge_llm.model}` (local via Ollama, digest {judge_llm.digest})"
                   if local_judge else
                   f"`{judge_llm.model}` (thinking {settings.judge_thinking_level or 'default'})")
     # Calibrate the judge first: its scores are only used if it catches every planted flaw.
     cal = [] if args.no_calibration else ge.run_calibration(
-        judge_llm, json.loads(Path(args.calibration).read_text(encoding="utf-8")))
+        judge_llm, checker, json.loads(Path(args.calibration).read_text(encoding="utf-8")))
     if cal:
         print(ge.calibration_table(cal) + "\n")
     if args.calibration_only:
@@ -143,13 +151,15 @@ def cmd_eval_gen(args) -> int:
         return 1
 
     pipeline = build_pipeline(settings, llm=answer_llm)
-    results = ge.run(pipeline, judge_llm, items)
+    results = ge.run(pipeline, judge_llm, checker, items)
     s = ge.summarize(results)
     table = ge.summary_table(s)
     print(table)
     cost = (f"Answer model `{answer_llm.model}`: {answer_llm.misses} API calls, "
             f"{answer_llm.hits} from cache; judge {judge_desc}: {judge_llm.misses} "
-            f"calls, {judge_llm.hits} from cache. Tokens this run: answers "
+            f"calls, {judge_llm.hits} from cache; citations {checker.name}: "
+            f"{citation_llm.misses} LLM calls, {citation_llm.hits} from cache. "
+            f"Tokens this run: answers "
             f"{answer_llm.usage}, judge {judge_llm.usage}.")
     print("\n" + cost)
 
@@ -164,12 +174,12 @@ def cmd_eval_gen(args) -> int:
             f"Golden set `{Path(args.file).as_posix()}` ({len(items)} questions). "
             f"Answers: `{answer_llm.model}` (thinking {settings.llm_thinking_level or 'default'}"
             f", temperature {settings.llm_temperature}). Judge: {judge_desc}, temperature 0, "
-            f"rubric `{rubric}`. "
+            f"rubric `{rubric}`. Citations: {checker.name}, one citation at a time. "
             f"Retrieval: {settings.retrieval_mode}, MIN_RERANK_SCORE={settings.min_rerank_score}, "
             f"top-{settings.final_k}.\n{partial}\n"
             f"## Summary\n\n{table}\n\n"
             f"## Judge calibration\n\nHand-written answers with planted flaws "
-            f"(`{Path(args.calibration).as_posix()}`), scored by the same judge:\n\n"
+            f"(`{Path(args.calibration).as_posix()}`), scored the same way:\n\n"
             f"{ge.calibration_table(cal) if cal else 'skipped'}\n\n"
             f"## Per question\n\n{ge.per_question_table(results)}\n\n"
             f"## Answers that lost points\n\n{ge.failures_section(results)}\n\n"
