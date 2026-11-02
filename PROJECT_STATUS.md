@@ -114,7 +114,7 @@ queue-based ingestion.
   but is not adopted: see D9. It was not run on F1-F6.
 
 **Resume plan:** decide D9, then `shipment-rag eval-gen --report
-data/eval/reports/stage2_generation.md`. Calibration and the 4 scored answers come from cache; 22
+data/eval/reports/stage2_generation.md`. Calibration and the 4 generated answers come from cache; 21
 questions remain, some of which are refused at retrieval and need no Gemini call. Then finish the
 README results, verification table and the bump to 0.4.0.
 
