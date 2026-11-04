@@ -153,7 +153,9 @@ class GeminiLLM:
         except Exception as exc:
             if _is_not_found(exc):
                 raise ModelNotFoundError(self.model) from exc
-            raise
+            raise LLMUnavailableError(
+                f"could not check Gemini model {self.model} ({type(exc).__name__})"
+            ) from exc
 
     def list_models(self) -> list[str]:
         return sorted(

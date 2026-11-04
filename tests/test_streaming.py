@@ -122,6 +122,18 @@ def test_gemini_stream_maps_daily_quota_and_does_not_retry(gemini):
     assert models.calls == 1
 
 
+def test_a_503_on_the_startup_check_is_a_clean_unavailable_error(gemini):
+    """eval-gen stops cleanly on this error type, so a raw SDK error would be a traceback."""
+    llm, _ = gemini()
+
+    def fails(model):
+        raise server_error()
+
+    llm._client.models.get = fails
+    with pytest.raises(LLMUnavailableError, match="ServerError"):
+        llm.check_model()
+
+
 def test_gemini_stream_maps_a_missing_model(gemini):
     missing = errors.ClientError(404, {"error": {"code": 404, "message": "nope"}}, None)
     llm, _ = gemini([missing])

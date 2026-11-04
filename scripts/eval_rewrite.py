@@ -169,7 +169,7 @@ def main() -> int:
         f"# Query rewriting eval\n\nRewriter `{args.model}` (local via Ollama, digest "
         f"{llm.digest}, temperature 0). Retrieval: {retriever.mode}, top-{retriever.final_k}, "
         f"MIN_RERANK_SCORE={retriever.min_rerank_score}. {len(secs)} rewrites, median "
-        f"{statistics.median(secs):.1f} s, slowest {max(secs):.1f} s on this CPU; "
+        f"{statistics.median(secs):.1f} s, slowest {max(secs):.1f} s on this machine; "
         f"{failures.count} fell back to the question as written.\n\n"
         "The follow-up cases and the rewrite prompt were committed before this first run and "
         "nothing was tuned on them. The threshold was chosen earlier on questions as written.\n\n"

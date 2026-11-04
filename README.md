@@ -209,6 +209,11 @@ top 3 passages, so an answer can't see all 10 records. Those questions now go to
 an independent measure. The 102 existing questions predate the router, which makes them the better
 check that it doesn't over-claim. It has one data source so far: only the shipment log is a table.
 
+### Running the heavy evals
+
+The local judge needs about 6 GB of free RAM. Without that, `notebooks/colab_eval_runner.ipynb` runs the
+same evals on Colab's free GPU and gives back a zip of reports and saved answers.
+
 ### Follow-up questions
 
 "Who accepted it?" can't be searched for. With `REWRITE_PROVIDER` set, it is rewritten into a standalone

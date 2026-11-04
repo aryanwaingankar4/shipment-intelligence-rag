@@ -123,6 +123,14 @@ which a test pins, and `eval-gen` turns the rewriter off anyway.
   reached the shipment table. Cases written alongside the code, so this shows the mechanism, not accuracy. F01 is a
   real miss, left untuned.
 
+**Colab runner (`notebooks/colab_eval_runner.ipynb`), added 2026-11-05.** The laptop can't hold the
+local model (below 6 GB free), so the heavy jobs run on Colab's T4: D5, then a calibration check, then
+Stage 2 scoring, then the blind label file (`scripts/prepare_citation_labels.py`). Saved answers travel in
+a zip because the cache is gitignored. Judge verdicts from the laptop's CPU and Colab's GPU can differ
+for the same prompt, so calibration reruns uncached on the GPU and must pass before scoring. **The
+notebook has never run on Colab:** its file structure, zip, key check and cache restore are tested
+offline, while the GPU, Ollama install and Gemini steps have not run at all.
+
 **Not verified**
 1. **Whether rewriting fixes the paraphrase weakness (D5).** That part of `scripts/eval_rewrite.py` was
    stopped: the machine hit 0.1 GB free of 15.7 GB with the 4.8 GB model loaded, the session's memory
