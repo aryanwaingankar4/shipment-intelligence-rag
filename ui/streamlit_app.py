@@ -3,6 +3,7 @@ so the UI and API scale and deploy independently."""
 
 import hmac
 import html
+import json
 import os
 
 import requests
@@ -11,6 +12,8 @@ import streamlit as st
 API_URL = os.environ.get("API_URL", "http://localhost:8080").rstrip("/")
 API_KEY = os.environ.get("API_KEY", "")
 REQUEST_TIMEOUT_S = float(os.environ.get("REQUEST_TIMEOUT_S", "90"))
+MAX_HISTORY_MESSAGES = 6  # earlier messages sent with a question, so follow-ups can be understood
+MAX_HISTORY_CHARS = 2000  # the API rejects a longer message; a rewrite doesn't need one
 
 COMPANY_NAME = os.environ.get("COMPANY_NAME", "NexaChain BioMed")
 TAGLINE = "Intelligent Pharmaceutical Supply Chain"
@@ -122,20 +125,36 @@ class AssistantUnavailable(Exception):
     pass
 
 
-def ask_api(question: str, custom_instructions: str) -> dict:
+def stream_api(question: str, custom_instructions: str, history: list[dict]):
+    """Yield (event, data) from the API's server-sent events as they arrive."""
     headers = {"X-API-Key": API_KEY} if API_KEY else {}
     try:
         r = requests.post(
-            f"{API_URL}/v1/query",
-            json={"question": question, "custom_instructions": custom_instructions},
+            f"{API_URL}/v1/query/stream",
+            json={"question": question, "custom_instructions": custom_instructions,
+                  "history": history},
             headers=headers,
             timeout=REQUEST_TIMEOUT_S,
+            stream=True,
         )
-    except requests.RequestException as exc:
+        if r.status_code != 200:
+            raise AssistantUnavailable()
+        r.encoding = "utf-8"
+        event = ""
+        for line in r.iter_lines(decode_unicode=True):
+            if line.startswith("event: "):
+                event = line[len("event: "):]
+            elif line.startswith("data: "):
+                yield event, json.loads(line[len("data: "):])
+    except (requests.RequestException, ValueError) as exc:
         raise AssistantUnavailable() from exc
-    if r.status_code != 200:
-        raise AssistantUnavailable()
-    return r.json()
+
+
+def recent_history() -> list[dict]:
+    """The messages before the one just asked, as the API expects them."""
+    earlier = [{"role": m["role"], "content": m["content"][:MAX_HISTORY_CHARS]}
+               for m in ss.messages[:-1]]
+    return earlier[-MAX_HISTORY_MESSAGES:]
 
 
 # ---------------- SESSION STATE ----------------
@@ -249,16 +268,23 @@ ROUTE_LABELS = {"shipment_table": "Answered from: shipment table (exact query, n
                 "documents": "Answered from: company documents"}
 
 
-def render_message(role, content, sources=None, route=None):
+def assistant_bubble(content: str) -> str:
+    initial = html.escape(ss.assistant_name[:1].upper() or "N")
+    return (f"<div class='chat-row'><div class='avatar nova'>{initial}</div>"
+            f"<div class='bubble nova'>{html.escape(content)}</div></div>")
+
+
+def render_message(role, content, sources=None, route=None, rewritten=None):
     # escape everything user- or model-generated before it goes into raw HTML
     safe = html.escape(content)
     if role == "user":
         st.markdown(f"<div class='chat-row user'><div class='bubble user'>{safe}</div>"
                     f"<div class='avatar user'>U</div></div>", unsafe_allow_html=True)
         return
-    initial = html.escape(ss.assistant_name[:1].upper() or "N")
-    st.markdown(f"<div class='chat-row'><div class='avatar nova'>{initial}</div>"
-                f"<div class='bubble nova'>{safe}</div></div>", unsafe_allow_html=True)
+    st.markdown(assistant_bubble(content), unsafe_allow_html=True)
+    if rewritten:
+        st.markdown(f"<div class='sources'>Understood as: {html.escape(rewritten)}</div>",
+                    unsafe_allow_html=True)
     if route in ROUTE_LABELS:
         st.markdown(f"<div class='sources'>{html.escape(ROUTE_LABELS[route])}</div>",
                     unsafe_allow_html=True)
@@ -287,22 +313,38 @@ def chat_page():
 
     st.markdown("---")
     for msg in ss.messages:
-        render_message(msg["role"], msg["content"], msg.get("sources"), msg.get("route"))
+        render_message(msg["role"], msg["content"], msg.get("sources"), msg.get("route"),
+                       msg.get("rewritten"))
 
     if prompt := st.chat_input(f"Ask {bot} about products, shipments, compliance..."):
         ss.messages.append({"role": "user", "content": prompt})
         render_message("user", prompt)
-        with st.spinner("Thinking..."):
-            try:
-                data = ask_api(prompt, ss.custom_instructions)
-                msg = {"role": "assistant", "content": data["answer"],
-                       "sources": data.get("sources", []), "route": data.get("route")}
-                ss.messages.append(msg)
-                render_message("assistant", msg["content"], msg["sources"], msg["route"])
-            except AssistantUnavailable:
-                st.markdown(f"<div class='error-card'><b>{html.escape(bot)} is currently "
-                            "unavailable.</b> Please try again shortly.</div>",
-                            unsafe_allow_html=True)
+        placeholder = st.empty()
+        written, final = "", None
+        try:
+            with st.spinner("Thinking..."):
+                for event, data in stream_api(prompt, ss.custom_instructions, recent_history()):
+                    if event == "delta":
+                        written += data["text"]
+                        placeholder.markdown(assistant_bubble(written), unsafe_allow_html=True)
+                    elif event == "done":
+                        final = data
+                    elif event == "error":
+                        raise AssistantUnavailable()
+            if final is None:  # the connection ended before the answer did
+                raise AssistantUnavailable()
+            placeholder.empty()
+            msg = {"role": "assistant", "content": final["answer"],
+                   "sources": final.get("sources", []), "route": final.get("route"),
+                   "rewritten": final.get("rewritten_question")}
+            ss.messages.append(msg)
+            render_message("assistant", msg["content"], msg["sources"], msg["route"],
+                           msg["rewritten"])
+        except AssistantUnavailable:
+            placeholder.empty()  # half an answer must not look like an answer
+            st.markdown(f"<div class='error-card'><b>{html.escape(bot)} is currently "
+                        "unavailable.</b> Please try again shortly.</div>",
+                        unsafe_allow_html=True)
 
     st.write("")
     if ss.messages:

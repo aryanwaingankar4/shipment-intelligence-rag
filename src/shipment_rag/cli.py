@@ -152,8 +152,10 @@ def cmd_eval_gen(args) -> int:
               "(fix the judge or rubric, or pass --skip-calibration-gate)", file=sys.stderr)
         return 1
 
-    # The golden set measures the document path (retrieval + LLM), so the table is left out.
-    pipeline = build_pipeline(settings.model_copy(update={"structured_queries": False}),
+    # The golden set measures the document path on questions as written, so the table and the
+    # rewriter are left out.
+    pipeline = build_pipeline(settings.model_copy(update={"structured_queries": False,
+                                                 "rewrite_provider": "off"}),
                               llm=answer_llm)
     results = ge.run(pipeline, judge_llm, checker, items)
     s = ge.summarize(results)

@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     # gemini-3.8-flash during the Stage 2 eval runs.
     llm_timeout_s: float = 60.0
 
+    # --- follow-up questions: rewrite them into standalone questions ---
+    # off = questions are used as written; ollama = local model, no quota; gemini = one extra
+    # Gemini call per rewrite. A rewriter that fails falls back to the question as written.
+    rewrite_provider: Literal["off", "ollama", "gemini"] = "off"
+    rewrite_model: str = ""  # gemini: empty = same as GEMINI_MODEL; ollama: required
+    rewrite_timeout_s: float = 60.0
+    rewrite_max_messages: int = 6  # recent chat messages shown to the rewriter
+    # Also rewrite questions with no history, into document wording (one more LLM call each).
+    rewrite_every_question: bool = False
+
     # --- generation eval (shipment-rag eval-gen) ---
     judge_provider: Literal["gemini", "ollama"] = "gemini"
     judge_model: str = ""  # gemini: empty = same as GEMINI_MODEL; ollama: required
