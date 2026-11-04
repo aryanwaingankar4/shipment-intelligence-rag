@@ -6,9 +6,9 @@
 | | |
 |---|---|
 | **Current version** | 0.3.2 |
-| **Current phase** | Stage 2 (generation eval) in progress: judge and calibration pass; 5/26 golden questions scored before the Gemini daily quota ran out; waiting for quota to finish |
+| **Current phase** | Stage 2 (generation eval) in progress: answer model switched to `gemini-3.5-flash-lite`, so all 26 golden questions are scored again, on the Colab or Kaggle runner. No generation numbers yet |
 | **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (stacked on Stage 2); `stage-4-streaming-followups` (stacked on Stage 3). All three are on GitHub as backup only, with no PRs |
-| **Last updated** | 2026-11-02 |
+| **Last updated** | 2026-11-05 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
 
@@ -52,7 +52,7 @@ Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──
 | Lexical | `rank-bm25` (BM25Okapi), ID-aware tokenizer | Built in memory from Chroma at first query, rebuilt when the chunk count changes |
 | Fusion | Reciprocal rank fusion (k=60) | `RETRIEVAL_MODE=vector\|bm25\|hybrid` (default hybrid) |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | `MIN_RERANK_SCORE=-10.25` (chosen on a held-out split) filters obvious junk; not a refusal guarantee |
-| LLM | Gemini `gemini-3.8-flash`, thinking level `low`, 2048 max output tokens | tenacity retries on 408/429/5xx, 30 s timeout, warns on `MAX_TOKENS`, fails fast on model 404 |
+| LLM | Gemini `gemini-3.5-flash-lite`, thinking level `low`, 2048 max output tokens | tenacity retries on 408/429/5xx, 30 s timeout, warns on `MAX_TOKENS`, fails fast on model 404 |
 | API | FastAPI + uvicorn | `/health`, `/ready`, `/v1/query`, request IDs, JSON logs |
 | UI | Streamlit | Thin client, HTML-escaped rendering, sources shown |
 | Packaging | Docker (API+ingest image, UI image), docker-compose | CPU torch, non-root, healthchecks |
@@ -131,6 +131,14 @@ for the same prompt, so calibration reruns uncached on the GPU and must pass bef
 notebook has never run on Colab:** its file structure, zip, key check and cache restore are tested
 offline, while the GPU, Ollama install and Gemini steps have not run at all.
 
+**Kaggle runner (`notebooks/kaggle_eval_runner.ipynb`), added 2026-11-05.** The same steps and commands
+as the Colab one (a test compares them), built to run unattended with "Save & Run All": the key comes
+from Kaggle Secrets and saved answers from any attached input. A failed step is recorded rather than
+raised, later steps that depend on it are skipped, and the last step always writes
+`/kaggle/working/kaggle_results_<time>.zip` with the failures listed in `run_info.json`. **It has never
+run on Kaggle either.** Offline tests cover its file structure, step logic, zip, key check and restore. 337 tests pass; 17 of 17
+deliberate breaks to the notebook were caught.
+
 **Not verified**
 1. **Whether rewriting fixes the paraphrase weakness (D5).** That part of `scripts/eval_rewrite.py` was
    stopped: the machine hit 0.1 GB free of 15.7 GB with the 4.8 GB model loaded, the session's memory
@@ -177,6 +185,20 @@ of the 102 existing eval questions the table claims 10, all correct when checked
 test runner, offline, with no exceptions) and a real API server with real models.
 
 ### Stage 2 — Generation eval — 🔶 in progress, 2026-11-02
+
+**Answer model switched on 2026-11-05 (owner decision; this overrides "Answers stay on
+`gemini-3.8-flash`" below).** `gemini-3.8-flash` returned 503 on every try, while one live answer on
+`gemini-3.5-flash-lite` came back complete, cited and with the correct sources (owner's test). Scoring
+now runs on `gemini-3.5-flash-lite`, which is also the code default. What this means for the results:
+
+- **The final numbers describe flash-lite.** The report header, the cost line and `run_info.json` all
+  name the answer model. Nothing measured here says how `gemini-3.8-flash` would have scored.
+- **All 26 questions are scored again.** Saved answers are stored per model, so the 3.8-flash answers
+  aren't reused and the old G01-G04 results (partial, never to be quoted) don't carry over.
+- **Two earlier caveats go away.** G01-G04 no longer need marking "not blind" for the hand-label check,
+  and all verdicts now come from one machine type instead of a CPU/GPU mix.
+- **New question for the citation check.** The NLI cutoff (D9) was settled on answers written by another
+  model, so the blind hand-label check is also its first test on flash-lite. D9's no-more-tuning rule stands.
 
 **State on 2026-11-02 (read this first; it replaces the plan further down)**
 
@@ -568,7 +590,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D7 | Finishing the generation eval under a 20 req/day free tier | ✅ **Decided: (b)**, judge on a different model. Pro models aren't usable on this free tier, so the judge is `gemini-3.7-flash`; calibration gates the scoring. Resumes day by day from the cache. |
 | D9 | ~~NLI citation false alarms on full-length chunks~~ | ✅ **Resolved**: whole passage OR any single line at 0.9, bullets read with their intro; 12/12 on fresh full-length cases. Hand-label agreement on golden answers still to report |
 | D8 | **Live demo (Stage 5) quota**: 20 req/day on the free tier would be used up by a few visitors | Paid tier with a budget cap, or a higher-quota model for the public demo, plus per-key rate limiting and answer caching. Decide before Stage 5. |
-| D3 | Gemini model lifetime | Default is now **`gemini-3.8-flash`** (Stage 0.5). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
+| D3 | Gemini model lifetime | Default is now **`gemini-3.5-flash-lite`** (2026-11-05, after `gemini-3.8-flash` kept returning 503). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 
 ---
 
@@ -631,6 +653,7 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-05 | Answer model `gemini-3.5-flash-lite` for Stage 2 and as the default (owner decision) | `gemini-3.8-flash` returned 503 on every try; flash-lite gave a complete, cited live answer. Results name the model measured |
 | 2026-11-02 | Local `qwen2.5:7b` judge via Ollama (owner decision) | Free-tier Gemini was too unreliable to judge with; no quota, and independent of the answer model |
 | 2026-11-02 | Check citations one at a time, NLI at 0.9 minimum entailment (owner decision) | The judge could not match `[n]` to passages; NLI is about 200x faster with no false alarms on the hand-written cases. False alarms on real chunks are open (D9) |
 | 2026-11-05 | The answer model never sees the conversation; only the rewriter does | Keeps answers grounded in passages: it can't repeat an earlier answer as fact. A bad rewrite costs a wrong search, and the guards catch invented IDs |

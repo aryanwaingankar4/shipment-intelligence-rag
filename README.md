@@ -27,7 +27,7 @@ answers that cite the company documents and refuse anything outside them.
 | Vector DB | ChromaDB 1.5.9 (cosine) — embedded locally, server mode in Docker |
 | Candidates | **Hybrid** (`RETRIEVAL_MODE=hybrid`): vector top-8 + BM25 top-8 with an ID-aware tokenizer, fused by reciprocal rank fusion → 12 candidates |
 | Rerank | `cross-encoder/ms-marco-MiniLM-L-6-v2` → top-3, junk filter at `MIN_RERANK_SCORE=-10.25` (chosen on a held-out split) |
-| LLM | Gemini (`gemini-3.8-flash` default, low thinking level) via `google-genai`, retries with backoff, fails fast if the model is unavailable |
+| LLM | Gemini (`gemini-3.5-flash-lite` default, low thinking level) via `google-genai`, retries with backoff, fails fast if the model is unavailable |
 | Exact questions | Counts, lists, totals and field lookups on shipments come from a read-only SQLite table, with no LLM call. Rule-based router; anything it doesn't fully understand goes to the documents |
 | Follow-ups | The client sends recent messages and a small LLM call rewrites the question to stand alone. The answer model never sees the conversation, so it can still only answer from passages |
 | Streaming | Answers arrive over server-sent events while they are written (`POST /v1/query/stream`) |
@@ -209,10 +209,17 @@ top 3 passages, so an answer can't see all 10 records. Those questions now go to
 an independent measure. The 102 existing questions predate the router, which makes them the better
 check that it doesn't over-claim. It has one data source so far: only the shipment log is a table.
 
+### Generation eval (in progress)
+
+Answer quality is being scored on **`gemini-3.5-flash-lite`**, on 26 golden questions. The default moved
+from `gemini-3.8-flash` because that model returned 503 on every try, so the numbers will describe
+flash-lite, not a stronger model. They will be added here once scored; no generation numbers are claimed yet.
+
 ### Running the heavy evals
 
-The local judge needs about 6 GB of free RAM. Without that, `notebooks/colab_eval_runner.ipynb` runs the
-same evals on Colab's free GPU and gives back a zip of reports and saved answers.
+The local judge needs about 6 GB of free RAM. Without that, a notebook runs the same evals on a free GPU
+and gives back a zip of reports and saved answers: `notebooks/colab_eval_runner.ipynb` runs one cell at a
+time, and `notebooks/kaggle_eval_runner.ipynb` runs start to finish with "Save & Run All".
 
 ### Follow-up questions
 

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     gemini_api_key: SecretStr | None = None
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     llm_temperature: float = 0.1
     # thinking tokens count against this on Gemini 3.x, so leave headroom
     llm_max_output_tokens: int = 2048
