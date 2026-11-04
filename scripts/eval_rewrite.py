@@ -105,7 +105,8 @@ def followup_part(raw_cases: list[dict], retriever, rewriter: TimedRewriter, rou
         rows.append(f"| {raw['id']} | {_cell(raw['question'])} | {_cell(rewrite)} | "
                     f"{'yes' if terms else '**no**'} | {'hit' if was else 'miss'} | "
                     f"{'hit' if now else '**miss**'}{table} |")
-        print(f"followup {raw['id']} terms={terms} before={was} after={now}{table}", flush=True)
+        print(f"followup {raw['id']} terms={terms} before={was} after={now}{table} "
+              f"rewrite={rewrite!r}", flush=True)
     n = len(raw_cases)
     summary = "\n".join([
         "| Follow-up metric | Result |", "|---|---|",

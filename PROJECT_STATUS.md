@@ -7,7 +7,7 @@
 |---|---|
 | **Current version** | 0.3.2 |
 | **Current phase** | Stage 2 (generation eval) in progress: judge and calibration pass; 5/26 golden questions scored before the Gemini daily quota ran out; waiting for quota to finish |
-| **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (local, stacked on Stage 2) |
+| **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (stacked on Stage 2); `stage-4-streaming-followups` (stacked on Stage 3). All three are on GitHub as backup only, with no PRs |
 | **Last updated** | 2026-11-02 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -80,9 +80,59 @@ queue-based ingestion.
 | 0.5 | Fixes from the owner's live check: truncation, model default + 404, secret scanning | ✅ done |
 | 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ✅ done (PR #2 merged) |
 | 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), manual workflow | 🔶 built; full run pending quota |
-| 3 | Structured query path for aggregate shipment questions + router | 🔶 built and tested offline on `stage-3-structured-query`; UI not yet seen live |
-| 4 | SSE streaming + follow-up questions (query rewriting) | ⬜ |
+| 3 | Structured query path for aggregate shipment questions + router | 🔶 built and tested offline on `stage-3-structured-query`; UI rendered by Streamlit's test runner, not yet in a browser |
+| 4 | SSE streaming + follow-up questions (query rewriting) | 🔶 built and tested offline on `stage-4-streaming-followups`; paraphrase measurement and live check not finished |
 | 5 | Real login, rate limiting, GHCR images, VM + Caddy deploy, CD | ⬜ (ask before spending money) |
+
+### Stage 4 — Streaming and follow-up questions — 🔶 built, offline, 2026-11-05
+
+On `stage-4-streaming-followups`, stacked on Stage 3. No Gemini calls and no new dependencies. Stage 2 is
+still blocked (Gemini 503s, see the Stage 2 update on its own branch), so its scores are not in here.
+Version bump is held until Stage 2 lands.
+
+**Built**
+- `POST /v1/query/stream`: plain server-sent events. `start`, `delta` pieces, then `done` with the same
+  body as `/v1/query`, or `error`. A refusal is only known once the text is complete, so only `done`
+  carries sources and the verdict.
+- `GeminiLLM` and `OllamaLLM` have `generate_stream`. Gemini retries only before the first chunk, since
+  a later retry would restart an answer someone is already reading. A cut-off Ollama reply raises at the
+  end rather than passing as complete.
+- `rewrite.py`: turns a question plus recent messages into a standalone question, using a JSON schema.
+  Falls back to the question as written if the model fails, the reply is unusable, or it adds a shipment
+  ID or product code that wasn't in the question or the messages shown.
+- `pipeline.py`: rewrite, then table, then retrieval. The answer model gets the rewritten question and no
+  conversation, so "answer only from the passages" still holds. `REWRITE_EVERY_QUESTION` also rewrites
+  lone questions (searches new wording, answers the original); off by default, for the D5 measurement.
+- API takes `history` (client-held, the server stores nothing) and returns `rewritten_question`.
+- UI streams into the bubble, sends the last 6 messages, shows "Understood as: ...", and removes partial
+  text if an answer fails.
+- `REWRITE_PROVIDER=off` by default. Local `.env` uses `ollama` with `qwen2.5:7b`. Which rewriter a live
+  deployment uses goes with D8 at Stage 5.
+
+**Golden set is unaffected:** a lone question makes no rewrite call and produces byte-identical prompts,
+which a test pins, and `eval-gen` turns the rewriter off anyway.
+
+**Verified**
+- Offline: lint clean, full test suite passes, including the chat page script against a stubbed API.
+  The UI tests skip on CI, where Streamlit isn't installed.
+- Tests can fail: 11 deliberate breaks (partial text kept, no escaping, retry after text was sent,
+  conversation shown to the answer model, invented IDs accepted, error text leaked, key check removed...)
+  were each caught by the tests.
+- First real rewriter run, local `qwen2.5:7b`, 14 follow-ups committed before it ran
+  (`reports/stage4_rewrite.md`): right passage 10/14 as written, 13/14 rewritten; rewrite terms 14/14; F12
+  reached the shipment table. Cases written alongside the code, so this shows the mechanism, not accuracy. F01 is a
+  real miss, left untuned.
+
+**Not verified**
+1. **Whether rewriting fixes the paraphrase weakness (D5).** That part of `scripts/eval_rewrite.py` was
+   stopped: the machine hit 0.1 GB free of 15.7 GB with the 4.8 GB model loaded, the session's memory
+   guard stopped the task, and its Python process kept running until it was stopped by hand. No result.
+2. **Pieces arriving over time on a real socket, and a live run through the API and page.** The test
+   client buffers responses. The check is written but was not started, because it loads the same model.
+3. **Gemini streaming against the real service.** Tested only against a fake client; Gemini was returning
+   503s and the stage was to spend no quota.
+4. A browser, and how a client disconnecting mid-answer behaves on a real server (the abandon path is
+   tested only by closing the generator).
 
 ### Stage 3 — Structured query path — 🔶 built, offline only, 2026-11-02
 
@@ -115,7 +165,8 @@ to the documents (all 10 owner paraphrases did), which is safe but misses some e
 routing cases in `structured_eval.json` (written alongside the router, so these are regression tests);
 of the 102 existing eval questions the table claims 10, all correct when checked against the log.
 
-**Not verified:** the Streamlit page in a browser and a real API server with real models.
+**Not verified:** the Streamlit page in a browser (its route labels were rendered by Streamlit's
+test runner, offline, with no exceptions) and a real API server with real models.
 
 ### Stage 2 — Generation eval — 🔶 in progress, 2026-11-02
 
@@ -574,6 +625,9 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 |---|---|---|
 | 2026-11-02 | Local `qwen2.5:7b` judge via Ollama (owner decision) | Free-tier Gemini was too unreliable to judge with; no quota, and independent of the answer model |
 | 2026-11-02 | Check citations one at a time, NLI at 0.9 minimum entailment (owner decision) | The judge could not match `[n]` to passages; NLI is about 200x faster with no false alarms on the hand-written cases. False alarms on real chunks are open (D9) |
+| 2026-11-05 | The answer model never sees the conversation; only the rewriter does | Keeps answers grounded in passages: it can't repeat an earlier answer as fact. A bad rewrite costs a wrong search, and the guards catch invented IDs |
+| 2026-11-05 | Conversation history is held by the client, not stored on the server | No session store to run or secure, and any API worker can serve any request. Trade-off: a client could send a false history, which only affects its own search |
+| 2026-11-05 | Hand-written SSE, no `sse-starlette` | Four lines of framing doesn't justify a dependency |
 | 2026-11-02 | Rule-based router and fixed SQL templates, no text-to-SQL | No quota, deterministic, and no model-written SQL reaches the database; unclear questions fall through to documents |
 | 2026-11-02 | NLI scores the whole passage and each line (owner decision, D9) | Multi-rule chunks made NLI answer neutral on correct claims; 12/12 on fresh full-length cases on the first try |
 | 2026-11-02 | `eval-gen.yml` manual only (owner decision) | Runners have no Ollama, so a nightly run would judge differently from the published results |

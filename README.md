@@ -29,6 +29,8 @@ answers that cite the company documents and refuse anything outside them.
 | Rerank | `cross-encoder/ms-marco-MiniLM-L-6-v2` → top-3, junk filter at `MIN_RERANK_SCORE=-10.25` (chosen on a held-out split) |
 | LLM | Gemini (`gemini-3.8-flash` default, low thinking level) via `google-genai`, retries with backoff, fails fast if the model is unavailable |
 | Exact questions | Counts, lists, totals and field lookups on shipments come from a read-only SQLite table, with no LLM call. Rule-based router; anything it doesn't fully understand goes to the documents |
+| Follow-ups | The client sends recent messages and a small LLM call rewrites the question to stand alone. The answer model never sees the conversation, so it can still only answer from passages |
+| Streaming | Answers arrive over server-sent events while they are written (`POST /v1/query/stream`) |
 | Guardrails | Refuse without an LLM call when nothing relevant is retrieved; strict grounded system prompt |
 
 ## Quick start (Docker — recommended)
@@ -207,24 +209,50 @@ top 3 passages, so an answer can't see all 10 records. Those questions now go to
 an independent measure. The 102 existing questions predate the router, which makes them the better
 check that it doesn't over-claim. It has one data source so far: only the shipment log is a table.
 
+### Follow-up questions
+
+"Who accepted it?" can't be searched for. With `REWRITE_PROVIDER` set, it is rewritten into a standalone
+question first, and that is what the table, retrieval and the answer model see. If the rewrite fails, or
+adds a shipment ID or product code nobody mentioned, the question is used as written. A question with no
+conversation makes no extra call and produces exactly the same prompt as before.
+
+| First run: 14 follow-ups in `data/eval/followups.json`, local `qwen2.5:7b` | Result |
+|---|---|
+| Right passage in the top 3 (or correctly refused), question as written | 10/14 |
+| Same, rewritten | 13/14 |
+| Rewrite names what it should and nothing it shouldn't | 14/14 |
+
+These cases were written alongside the code, so this shows the mechanism works rather than measuring
+its accuracy. They and the prompt were committed before the first run and not tuned afterwards. Details and the one miss:
+`data/eval/reports/stage4_rewrite.md`. **Not measured yet:** whether rewriting also fixes the paraphrase
+weakness above, because that part of the run was stopped when the machine ran out of memory.
+
 ## API
 
 ```http
 POST /v1/query
 X-API-Key: <key>            # required when API_KEYS is set
-{"question": "Which shipments breached temperature?", "custom_instructions": ""}
+{"question": "Which shipments breached temperature?", "custom_instructions": "",
+ "history": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
 ```
+
+`history` is optional, up to 20 messages, oldest first. The client keeps it: the server stores no
+conversations. `POST /v1/query/stream` takes the same body and sends server-sent events: `start` {route,
+rewritten_question, request_id}, then `delta` {text} pieces, then `done` with the full response below, or
+`error` {detail} instead of `done`. The status is already 200 by the time a model fails, so only `done`
+means the answer is complete.
 
 Response: `answer`, `refused`, `route` (`documents` or `shipment_table`), `sources[] {source,
 section, rerank_score, snippet}`, `structured_query {template, params, rows}` (table answers only),
-`latency_ms`, `request_id`. Ops endpoints: `GET /health` (liveness), `GET /ready`
+`rewritten_question` (when a rewrite changed what was searched for), `latency_ms`, `request_id`. Ops
+endpoints: `GET /health` (liveness), `GET /ready`
 (index reachable and non-empty).
 
 ## Layout
 
 ```
-src/shipment_rag/   config, ingestion/, embeddings, vectorstore, retrieval, structured/, llm,
-                    pipeline, api/, cli
+src/shipment_rag/   config, ingestion/, embeddings, vectorstore, retrieval, structured/, rewrite,
+                    llm, pipeline, api/, cli
 ui/                 Streamlit front end (separate image)
 data/docs/          knowledge base (source of truth for the index)
 data/eval/          evaluation sets; reports/ holds generated eval reports
