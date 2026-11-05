@@ -6,8 +6,8 @@
 | | |
 |---|---|
 | **Current version** | 0.4.0 |
-| **Current phase** | Stage 2 partial: 21 of 26 golden questions scored on `gemini-3.5-flash-lite`, on Kaggle; the other 5 hit 503s. Stages 2-4 going into `main` |
-| **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (stacked on Stage 2); `stage-4-streaming-followups` (stacked on Stage 3). All three are on GitHub as backup only, with no PRs |
+| **Current phase** | Stage 2 complete: all 26 golden questions scored on `gemini-3.5-flash-lite`, on Kaggle. Stages 2-4 going into `main`; Stage 5 (security and deployment) is next |
+| **Branches** | PRs #1-#5 merged into `main`; PR #6 (`stage-4-streaming-followups`) is the last of the Stage 2-4 stack |
 | **Last updated** | 2026-11-05 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -79,16 +79,15 @@ queue-based ingestion.
 | 0 | Git cleanup + Phase 4 close-out (D1 rename, live checks) | ✅ done (Docker check pending, see §4) |
 | 0.5 | Fixes from the owner's live check: truncation, model default + 404, secret scanning | ✅ done |
 | 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ✅ done (PR #2 merged) |
-| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), manual workflow | 🔶 built; full run pending quota |
-| 3 | Structured query path for aggregate shipment questions + router | 🔶 built and tested offline on `stage-3-structured-query`; UI rendered by Streamlit's test runner, not yet in a browser |
-| 4 | SSE streaming + follow-up questions (query rewriting) | 🔶 built and tested offline on `stage-4-streaming-followups`; paraphrase measurement and live check not finished |
+| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), manual workflow | ✅ done: all 26 scored, results below |
+| 3 | Structured query path for aggregate shipment questions + router | ✅ done, PR #5 |
+| 4 | SSE streaming + follow-up questions (query rewriting) | ✅ done, PR #6 |
 | 5 | Real login, rate limiting, GHCR images, VM + Caddy deploy, CD | ⬜ (ask before spending money) |
 
-### Stage 4 — Streaming and follow-up questions — 🔶 built, offline, 2026-11-05
+### Stage 4 — Streaming and follow-up questions — ✅ complete, 2026-11-05
 
-On `stage-4-streaming-followups`, stacked on Stage 3. No Gemini calls and no new dependencies. Stage 2 is
-still blocked (Gemini 503s, see the Stage 2 update on its own branch), so its scores are not in here.
-Version bump is held until Stage 2 lands.
+On `stage-4-streaming-followups`, stacked on Stage 3, with no new dependencies. Built offline first, then
+checked live; see the live demo test below. Stage 2's scores are in its own section.
 
 **Built**
 - `POST /v1/query/stream`: plain server-sent events. `start`, `delta` pieces, then `done` with the same
@@ -140,8 +139,7 @@ raised, later steps that depend on it are skipped, and the last step always writ
 never run. Offline tests also cover its file structure, step logic, zip, key check and restore.
 
 **Demo setup and v0.4.0, 2026-11-05.** `scripts/demo.ps1` starts the API and UI with no Docker or Ollama.
-Rewriting is off by default; `-FollowUps` uses the Gemini rewriter. Version 0.4.0 covers Stages 2-4, with
-Stage 2 still marked partial. Live calls with no local models loaded, both on `gemini-3.5-flash-lite`:
+Rewriting is off by default; `-FollowUps` uses the Gemini rewriter. Version 0.4.0 covers Stages 2-4. Live calls with no local models loaded, both on `gemini-3.5-flash-lite`:
 streaming returned a correct, cited answer in 1.7 s, and the rewriter produced "What corrective action was
 taken for shipment SH-2024-007?". The table demo answers were run for real (650 vials; 2 breaches).
 
@@ -172,7 +170,7 @@ about 70 MB. Free RAM went from 4.3 to 2.9 GB with the demo running.
 4. How a client disconnecting mid-answer behaves on a real server (the abandon path is tested only by closing
    the generator).
 
-### Stage 3 — Structured query path — 🔶 built, offline only, 2026-11-02
+### Stage 3 — Structured query path — ✅ complete, 2026-11-05
 
 Built while waiting for Gemini quota, on `stage-3-structured-query`, stacked on Stage 2 because it
 needs Stage 2's pipeline changes. No Gemini calls and no new dependencies (`sqlite3` is stdlib).
@@ -206,35 +204,40 @@ of the 102 existing eval questions the table claims 10, all correct when checked
 **Not verified:** the Streamlit page in a browser (its route labels were rendered by Streamlit's
 test runner, offline, with no exceptions) and a real API server with real models.
 
-### Stage 2 — Generation eval — 🔶 in progress, 2026-11-02
+### Stage 2 — Generation eval — ✅ complete, 2026-11-05
 
-**Results on 2026-11-05: 21 of 26 scored (Kaggle, commit `c77a767`, no failed steps).** Report:
-`reports/stage2_generation.md`. Labels: `data/eval/citation_labels_golden.json`.
+**Results on 2026-11-05: all 26 scored, on Kaggle, in two runs with no failed steps.** The first (`c77a767`) scored
+21, and 503s stopped 5. The rerun (`90d1b34`) reused the 20 saved answers: 5 Gemini calls, 20 from cache, no 503s, and
+the 13 answers already labelled came back byte-identical. Report: `reports/stage2_generation.md`. Labels:
+`data/eval/citation_labels_golden.json`.
 
 | Metric | Result |
 |---|---|
-| Answerable fully correct (judge) | 15/15 |
-| Key facts, exact string match | 28/28 |
-| Wrongly refused | 0/15 |
-| No unsupported claims (judge) | 15/15 |
-| At least one citation | 13/15 (G04 and G11 cite nothing) |
-| Cited answers passing the checker | 11/13 |
-| Cited sentences supported, by hand | 17/17 |
+| Answerable fully correct (judge) | 20/20 |
+| Key facts, exact string match | 38/38 |
+| Wrongly refused | 0/20 |
+| No unsupported claims (judge) | 20/20 |
+| At least one citation | 18/20 (G04 and G11 cite nothing) |
+| Cited answers passing the checker | 14/18 |
+| Cited sentences supported, by hand | 24/25 |
 | Should-refuse refused | 4/4 (1 at retrieval, 3 by the model) |
 | Traps handled, nothing invented | 2/2 |
-| Calibration on the GPU, uncached | 35/35 |
+| Calibration on the GPU, uncached | 35/35, on both runs |
 | Retrieval gate on Kaggle | 89% (same as the laptop's as-written score) |
 
-- **Not scored, all 503s:** G07 (single-doc), G13, G15, G16 (multi-doc), G20 (aggregate). Four of the five are the
-  hardest kinds, so 15/15 is not a full-set result. A Kaggle rerun with the results zip attached needs 5 Gemini calls.
-- **Blind hand-label check (labels by Claude, not the owner; commit `e4df0bd` precedes opening the report).** All 15
-  listed sentences are supported. The checker flagged 2 (G17 "Based on the company documents, ..." at 0.036 and G18
-  "Yes, ..." at 0.539), so 13/15 agreement and 2 false alarms. The set has no wrong citations, so it can't measure
-  catching them; calibration covers that on planted cases. No tuning, per D9.
-- **Bug found, not fixed: `cited_claims` skips multi-number markers.** `[1, 3]` is not parsed, so 2 of 17 cited
-  sentences (G12, G14) were never checked. By hand both are supported. Left alone tonight so the code matches the
-  measured run. Fix it before the next full scoring run.
-- **Model flake:** live demo runs returned "-8°柏" for "-8°C" on one question, intermittently, in the API's raw bytes.
+- **Blind hand-label check (labels by Claude, not the owner; commits `e4df0bd` and `e5a40aa` each precede opening
+  that run's report).** 22 of 23 listed sentences are supported. Against those labels the checker agrees on 18/23: 5
+  false alarms in 22 supported sentences (G15 twice, G17, G18, G20's second sentence) and 1 of 1 caught. That catch is
+  weak evidence: all three sentences starting "Based on the..." were flagged, right or wrong. No tuning, per D9.
+- **G20 is correct by luck.** Search returned 3 of the 4 vendors, without SafeMove (94%), so "best" can't follow from
+  the passages. The judge gave 2/2 and faithful. This label is a judgement call, explained in the label file. Aggregate
+  questions remain the weak spot; the table only covers shipments.
+- **The judge passed everything** on the 26 real answers, so the planted flaws are its only test of catching errors.
+- **Bug found, not fixed: `cited_claims` skips markers written as `[1, 3]`,** so 2 of 25 cited sentences (G12, G14) were
+  never checked. By hand both are supported. Left alone so the code matches the measured run. Fix it before the next
+  full scoring run.
+- **Model flake:** live demo runs returned "-8°柏" for "-8°C" on one question, intermittently, in the API's raw bytes. None of the 26 scored answers has it.
+- **D5 reproduced:** the rerun's tables in `reports/stage4_rewrite.md` match the first run exactly.
 
 **Answer model switched on 2026-11-05 (owner decision; this overrides "Answers stay on
 `gemini-3.8-flash`" below).** `gemini-3.8-flash` returned 503 on every try, while one live answer on
@@ -250,7 +253,7 @@ now runs on `gemini-3.5-flash-lite`, which is also the code default. What this m
 - **New question for the citation check.** The NLI cutoff (D9) was settled on answers written by another
   model, so the blind hand-label check is also its first test on flash-lite. D9's no-more-tuning rule stands.
 
-**State on 2026-11-02 (read this first; it replaces the plan further down)**
+**State on 2026-11-02 (history: the results above replace this)**
 
 - **Judge moved to a local model.** Free-tier Gemini was too unreliable (503/504s, and a 429
   naming `gemini-3.8-flash` on a `gemini-3.7-flash` request, so the models may share quota;
@@ -645,7 +648,7 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D5 | **Fixing the paraphrase weakness** (70% hit@3; cross-encoder scores colloquial questions very low) | Options, cheapest first: (a) LLM query rewriting into document vocabulary, which fits Stage 4 (it already adds rewriting for follow-ups) but costs one LLM call per question; (b) a stronger reranker such as `BAAI/bge-reranker-base` (~280M params, about 3× the image weight and CPU latency), which needs owner approval as a heavier model; (c) more/better embeddings. Recommendation: (a) in Stage 4, measured on the paraphrase slice. **Measured 2026-11-05:** rewriting lifts paraphrases 14 to 18 of 20 but costs one ID question and one off-domain refusal, so it stays on for follow-ups only. |
 | D6 | ~~CI retrieval gate 90% vs 89% with owner paraphrases~~ | ✅ **Resolved**: gate lowered to 85%, a regression guard below the current 89% baseline rather than a target |
 | D7 | Finishing the generation eval under a 20 req/day free tier | ✅ **Decided: (b)**, judge on a different model. Pro models aren't usable on this free tier, so the judge is `gemini-3.7-flash`; calibration gates the scoring. Resumes day by day from the cache. |
-| D9 | ~~NLI citation false alarms on full-length chunks~~ | ✅ **Resolved**: whole passage OR any single line at 0.9, bullets read with their intro; 12/12 on fresh full-length cases. Blind hand labels on flash-lite answers: 13/15 agreement, 2 false alarms, no tuning |
+| D9 | ~~NLI citation false alarms on full-length chunks~~ | ✅ **Resolved**: whole passage OR any single line at 0.9, bullets read with their intro; 12/12 on fresh full-length cases. Blind hand labels on flash-lite answers: 18/23 agreement, 5 false alarms, no tuning |
 | D8 | **Live demo (Stage 5) quota**: 20 req/day on the free tier would be used up by a few visitors | Paid tier with a budget cap, or a higher-quota model for the public demo, plus per-key rate limiting and answer caching. Decide before Stage 5. |
 | D3 | Gemini model lifetime | Default is now **`gemini-3.5-flash-lite`** (2026-11-05, after `gemini-3.8-flash` kept returning 503). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 

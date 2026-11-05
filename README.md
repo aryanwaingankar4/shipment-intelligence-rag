@@ -13,7 +13,7 @@ answers that cite the company documents and refuse anything outside them.
 | Retrieval (hybrid search, reranking, refusal cutoff) | Done, measured below, checked in CI |
 | Exact shipment questions from a table | Done, tested offline |
 | Streaming answers and follow-up questions | Done, with the API and UI run live on a laptop |
-| Generation eval (answer quality) | **Partial:** 21 of 26 questions scored, results below. The 5 unscored include most of the hardest ones |
+| Generation eval (answer quality) | Done: all 26 questions scored, results and limits below |
 | Public deployment and real login | Not started: the UI login is a demo login |
 
 ## Architecture
@@ -251,7 +251,7 @@ top 3 passages, so an answer can't see all 10 records. Those questions now go to
 an independent measure. The 102 existing questions predate the router, which makes them the better
 check that it doesn't over-claim. It has one data source so far: only the shipment log is a table.
 
-### Generation eval (partial: 21 of 26 questions)
+### Generation eval (all 26 questions)
 
 Measured on **`gemini-3.5-flash-lite`**, not a stronger model, because `gemini-3.8-flash` returned 503 on every
 try. The judge is a local `qwen2.5:7b`, run on a Kaggle GPU. Details:
@@ -259,31 +259,35 @@ try. The judge is a local `qwen2.5:7b`, run on a Kaggle GPU. Details:
 
 | Metric | Result |
 |---|---|
-| Questions scored | 21/26 (the other 5 hit Gemini 503s) |
-| Answerable: fully correct, per the LLM judge | 15/15 |
-| Answerable: key facts present, by exact string match with no LLM | 28/28 |
-| Answerable: wrongly refused | 0/15 |
-| Generated answers with no unsupported claims, per the LLM judge | 15/15 |
-| Answers with at least one citation | 13/15 |
-| Cited answers passing the automatic citation checker | 11/13 |
-| Cited sentences supported by their passage, read by hand | 17/17 |
+| Answerable: fully correct, per the LLM judge | 20/20 |
+| Answerable: key facts present, by exact string match with no LLM | 38/38 |
+| Answerable: wrongly refused | 0/20 |
+| Generated answers with no unsupported claims, per the LLM judge | 20/20 |
 | Unanswerable questions refused | 4/4 |
 | Traps (figure not in the documents): says so instead of inventing one | 2/2 |
+| Answers with at least one citation | 18/20 |
+| Cited answers passing the automatic citation checker | 14/18 |
+| Cited sentences supported by their passage, read by hand | 24/25 |
 | Judge's check on hand-written answers with planted flaws | 35/35 |
 
 **How to read these:**
 
-- **The hardest questions are missing.** Of the 5 unscored, 3 are multi-document and 1 needs all four vendors at
-  once, the known weak spot in the retrieval results. Treat 15/15 as the easier questions only.
-- **The hand check has limits.** Claude did the labelling, from a file with no checker verdicts, and the labels
-  were committed before the report was opened. It is not an independent human review. Every sentence turned out
-  to be supported, so it shows the checker's false alarms (2 of 15 sentences, both on lead-in words: "Based on
-  the company documents, ..." and "Yes, ..."), not whether it catches wrong citations. The planted flaws test
-  that instead. The checker was not tuned after this.
-- **Two citation gaps.** Two correct answers cite nothing. The checker also skips sentences cited with two numbers,
-  like `[1, 3]`: 2 of the 17 here, which is why the hand count is higher.
-- **Small sample, one LLM judge.** Single questions are anecdotes. Flash-lite also garbled a character in some live
-  runs ("-8°柏" instead of "-8°C" on one question), which is a reason to check answers before relying on them.
+- **Small set, one LLM judge.** 26 questions can show the pipeline works, not a true accuracy of 100%. The judge
+  passed everything it saw here, so the string match and the planted flaws are the checks to lean on.
+- **The one hand-labelled miss is a lucky answer.** "Which vendor has the best on-time delivery rate?" is correct,
+  but search returned only 3 of the 4 vendors. The model could not have known 96% was the best, and neither could
+  a reader checking its citation. Questions across all records are still the weak spot.
+- **The automatic citation checker is noisy.** It flagged 6 of 23 sentences, and by hand 5 of those are fine: 18/23
+  agreement. It often trips on lead-in words such as "Based on the company documents, ...". The one it got right
+  also starts that way, so that isn't evidence it catches real errors; the planted flaws test that instead. The
+  checker was not tuned after this.
+- **The hand check has limits.** Claude did the labelling, from a file with no checker verdicts, and the labels were
+  committed before each report was opened. It is not an independent human review.
+- **Two citation gaps.** Two correct answers cite nothing. The checker also skips sentences cited as `[1, 3]`: 2 of
+  the 25 here.
+- **Two runs.** 503s stopped 5 questions the first time, and a rerun reused the 20 saved answers and scored the rest.
+- **Flash-lite can garble text.** In live runs one answer sometimes said "-8°柏" instead of "-8°C". None of the 26
+  scored answers has this, but check answers before relying on them.
 
 ### Running the heavy evals
 

@@ -2,24 +2,22 @@
 
 Golden set `data/eval/golden_qa.json` (26 questions). Answers: `gemini-3.5-flash-lite` (thinking low, temperature 0.1). Judge: `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48), temperature 0, rubric `4fd3b947`. Citations: NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9), one citation at a time. Retrieval: hybrid, MIN_RERANK_SCORE=-10.25, top-3.
 
-> **Partial run:** 5 of 26 questions not scored (LLM errors / quota). Re-running resumes from the cache.
-
 ## Summary
 
 | Metric | Result |
 |---|---|
 | **Answerable questions** |  |
-| fully correct (judge: 2/2) | 15/15 (100%) |
-| partly correct (1/2) | 0/15 (0%) |
+| fully correct (judge: 2/2) | 20/20 (100%) |
+| partly correct (1/2) | 0/20 (0%) |
 | mean correctness | 100% |
-| key facts present in the answer (string match) | 28/28 (100%) |
-| wrongly refused | 0/15 (0%) |
-| **Faithfulness** (no unsupported claims, all generated answers) | 15/15 (100%) |
+| key facts present in the answer (string match) | 38/38 (100%) |
+| wrongly refused | 0/20 (0%) |
+| **Faithfulness** (no unsupported claims, all generated answers) | 20/20 (100%) |
 | **Citations** (answered answerable questions) |  |
-| answer has ≥1 [n] citation | 13/15 (87%) |
-| all citation numbers valid | 13/13 (100%) |
-| cites a passage from an expected source file | 13/13 (100%) |
-| every cited passage supports its sentence | 11/13 (85%) |
+| answer has ≥1 [n] citation | 18/20 (90%) |
+| all citation numbers valid | 18/18 (100%) |
+| cites a passage from an expected source file | 18/18 (100%) |
+| every cited passage supports its sentence | 14/18 (78%) |
 | **Should refuse** (unanswerable / off-domain) |  |
 | refused | 4/4 (100%) |
 | of which refused at retrieval (no LLM answer call) | 1/4 (25%) |
@@ -58,20 +56,20 @@ Judge agreement on planted flaws: **35/35** checks (12/12 cases scored).
 | G04 | answerable | What has to happen if an ambient product stays above 30°C f… | 2/2 | yes | no_citations | 2/2 |  |
 | G05 | answerable | How often is temperature mapping of the cold rooms repeated? | 2/2 | yes | all_supported | 1/1 |  |
 | G06 | answerable | Within how many days of delivery can a product be returned? | 2/2 | yes | all_supported | 1/1 |  |
-| G07 | answerable | What quality rating does Deccan Pharma Logistics have? | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G07 | answerable | What quality rating does Deccan Pharma Logistics have? | 2/2 | yes | all_supported | 1/1 |  |
 | G08 | answerable | What temperatures were recorded for SH-2024-004? | 2/2 | yes | all_supported | 2/2 |  |
 | G09 | answerable | Which product and batch were shipped in SH-2024-008, and wh… | 2/2 | yes | all_supported | 3/3 |  |
 | G10 | answerable | Who is the contact person for vendor V-004, and what is the… | 2/2 | yes | all_supported | 2/2 |  |
 | G11 | answerable | Which deviation report was raised for SH-2024-003? | 2/2 | yes | no_citations | 1/1 |  |
 | G12 | answerable | Why was SH-2024-003 quarantined, and what corrective action… | 2/2 | yes | all_supported | 3/3 |  |
-| G13 | answerable | Which vendor handled the rejected frozen shipment, and what… | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G13 | answerable | Which vendor handled the rejected frozen shipment, and what… | 2/2 | yes | all_supported | 2/2 |  |
 | G14 | answerable | A cold-chain consignment arrived at 11°C. What must we do, … | 2/2 | yes | all_supported | 2/2 |  |
-| G15 | answerable | What were the two temperature breaches in FY2024, and what … | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
-| G16 | answerable | A vendor shipment is more than 48 hours late. Who do we esc… | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G15 | answerable | What were the two temperature breaches in FY2024, and what … | 2/2 | yes | some_unsupported | 3/3 |  |
+| G16 | answerable | A vendor shipment is more than 48 hours late. Who do we esc… | 2/2 | yes | all_supported | 2/2 |  |
 | G17 | answerable | How long do the frozen sample kits stay usable? | 2/2 | yes | some_unsupported | 1/1 |  |
 | G18 | answerable | Do we have to keep the old logger calibration paperwork? | 2/2 | yes | some_unsupported | 1/1 |  |
 | G19 | answerable | Our truck broke down halfway to the customer. What now? | 2/2 | yes | all_supported | 2/2 |  |
-| G20 | answerable | Which vendor has the best on-time delivery rate? | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G20 | answerable | Which vendor has the best on-time delivery rate? | 2/2 | yes | some_unsupported | 2/2 |  |
 | G21 | refusal | What is the status of shipment SH-2024-011? | 2/2 | yes | no_citations | – | refused |
 | G22 | refusal | What temperature should insulin pens be stored at? | 2/2 | yes | no_citations | – | refused |
 | G23 | refusal | Who is the CEO of NexaChain BioMed? | 2/2 | yes | no_citations | – | refused |
@@ -80,6 +78,14 @@ Judge agreement on planted flaws: **35/35** checks (12/12 cases scored).
 | G26 | trap | What was the temperature breach rate in Q3 FY2024? | 2/2 | yes | no_citations | – | refused |
 
 ## Answers that lost points
+
+**G15: What were the two temperature breaches in FY2024, and what did they have in common?**
+
+- Answer: Based on the company documents, the two temperature breaches recorded in FY2024 were shipments SH-2024-003 and SH-2024-007 [3]. They had the following in common: * Both breaches involved temperature-sensitive products on multi-day transit [1]. * Both shared the common theme of thermal packaging not being matched to the actual transit duration [1].
+- Reference: SH-2024-003 (cold chain, reached 11.2°C, quarantined) and SH-2024-007 (frozen, rose to -8°C, rejected). Both were temperature-sensitive products on multi-day transit whose thermal packaging was not matched to the actual transit duration.
+- Judge: correctness 2/2, faithful True, citations some_unsupported. The answer correctly identifies the commonalities between the two breaches as stated in the passages, without adding unsupported claims or contradicting the reference answer.
+- Unsupported citation [3]: Based on the company documents, the two temperature breaches recorded in FY2024 were shipments SH-2024-003 and SH-2024-007. (entailment 0.194)
+- Unsupported citation [1]: They had the following in common Both breaches involved temperature-sensitive products on multi-day transit. (entailment 0.291)
 
 **G17: How long do the frozen sample kits stay usable?**
 
@@ -95,10 +101,18 @@ Judge agreement on planted flaws: **35/35** checks (12/12 cases scored).
 - Judge: correctness 2/2, faithful True, citations some_unsupported. The answer correctly states that logger calibration certificates are retained for 3 years, which is accurate according to the passage provided. It does not contradict the reference answer and includes the key fact without adding unnecessary information.
 - Unsupported citation [1]: Yes, logger calibration certificates are retained for 3 years. (entailment 0.539)
 
+**G20: Which vendor has the best on-time delivery rate?**
+
+- Answer: Based on the provided company documents, MedSupply India Pvt Ltd (vendor V-001) has the best on-time delivery rate at 96% [2]. (Deccan Pharma Logistics has 91% [1] and ArcticLine Cold Logistics has 88% [3]).
+- Reference: MedSupply India Pvt Ltd (V-001), with 96% in FY2024 (SafeMove 94%, Deccan 91%, ArcticLine 88%).
+- Judge: correctness 2/2, faithful True, citations some_unsupported. The answer correctly identifies MedSupply India Pvt Ltd (V-001) with the highest on-time delivery rate of 96% in FY2024, as per the provided passages. It also correctly compares this rate with the other vendors mentioned.
+- Unsupported citation [2]: Based on the provided company documents, MedSupply India Pvt Ltd (vendor V-001) has the best on-time delivery rate at 96%. (entailment 0.005)
+- Unsupported citation [1, 3]: (Deccan Pharma Logistics has 91% and ArcticLine Cold Logistics has 88%). (entailment 0.505)
+
 
 ## Cost
 
-Answer model `gemini-3.5-flash-lite`: 20 API calls, 0 from cache; judge `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48): 32 calls, 0 from cache; citations NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9): 0 LLM calls, 0 from cache. Tokens this run: answers {'calls': 20, 'prompt_tokens': 12528, 'output_tokens': 692, 'thought_tokens': 948, 'seconds': 128.8, 'max_seconds': 29.1}, judge {'calls': 32, 'prompt_tokens': 20534, 'output_tokens': 2166, 'thought_tokens': 0, 'seconds': 87.4, 'max_seconds': 3.5}.
+Answer model `gemini-3.5-flash-lite`: 5 API calls, 20 from cache; judge `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48): 5 calls, 32 from cache; citations NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9): 0 LLM calls, 0 from cache. Tokens this run: answers {'calls': 5, 'prompt_tokens': 3444, 'output_tokens': 251, 'thought_tokens': 310, 'seconds': 73.4, 'max_seconds': 56.9}, judge {'calls': 5, 'prompt_tokens': 4143, 'output_tokens': 361, 'thought_tokens': 0, 'seconds': 15.2, 'max_seconds': 3.8}.
 
 ## Caveats
 
