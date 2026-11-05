@@ -1,31 +1,31 @@
 # Generation eval — 2026-11-05
 
-Golden set `data/eval/golden_qa.json` (26 questions). Answers: `gemini-3.8-flash` (thinking low, temperature 0.1). Judge: `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48), temperature 0, rubric `4fd3b947`. Citations: NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9), one citation at a time. Retrieval: hybrid, MIN_RERANK_SCORE=-10.25, top-3.
+Golden set `data/eval/golden_qa.json` (26 questions). Answers: `gemini-3.5-flash-lite` (thinking low, temperature 0.1). Judge: `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48), temperature 0, rubric `4fd3b947`. Citations: NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9), one citation at a time. Retrieval: hybrid, MIN_RERANK_SCORE=-10.25, top-3.
 
-> **Partial run:** 22 of 26 questions not scored (LLM errors / quota). Re-running resumes from the cache.
+> **Partial run:** 5 of 26 questions not scored (LLM errors / quota). Re-running resumes from the cache.
 
 ## Summary
 
 | Metric | Result |
 |---|---|
 | **Answerable questions** |  |
-| fully correct (judge: 2/2) | 4/4 (100%) |
-| partly correct (1/2) | 0/4 (0%) |
+| fully correct (judge: 2/2) | 15/15 (100%) |
+| partly correct (1/2) | 0/15 (0%) |
 | mean correctness | 100% |
-| key facts present in the answer (string match) | 9/9 (100%) |
-| wrongly refused | 0/4 (0%) |
-| **Faithfulness** (no unsupported claims, all generated answers) | 4/4 (100%) |
+| key facts present in the answer (string match) | 28/28 (100%) |
+| wrongly refused | 0/15 (0%) |
+| **Faithfulness** (no unsupported claims, all generated answers) | 15/15 (100%) |
 | **Citations** (answered answerable questions) |  |
-| answer has ≥1 [n] citation | 4/4 (100%) |
-| all citation numbers valid | 4/4 (100%) |
-| cites a passage from an expected source file | 4/4 (100%) |
-| every cited passage supports its sentence | 3/4 (75%) |
+| answer has ≥1 [n] citation | 13/15 (87%) |
+| all citation numbers valid | 13/13 (100%) |
+| cites a passage from an expected source file | 13/13 (100%) |
+| every cited passage supports its sentence | 11/13 (85%) |
 | **Should refuse** (unanswerable / off-domain) |  |
-| refused | n/a |
-| of which refused at retrieval (no LLM answer call) | n/a |
+| refused | 4/4 (100%) |
+| of which refused at retrieval (no LLM answer call) | 1/4 (25%) |
 | **Traps** (documents lack the specific figure) |  |
-| handled: says the information isn't in the documents | n/a |
-| invented the figure | n/a |
+| handled: says the information isn't in the documents | 2/2 (100%) |
+| invented the figure | 0/2 (0%) |
 
 ## Judge calibration
 
@@ -53,45 +53,52 @@ Judge agreement on planted flaws: **35/35** checks (12/12 cases scored).
 | ID | type | question | correct | faithful | citations | key facts | note |
 |---|---|---|---|---|---|---|---|
 | G01 | answerable | What are the storage conditions for ImmunoChill Vaccine Via… | 2/2 | yes | all_supported | 2/2 |  |
-| G02 | answerable | Which documents must travel with every shipment? | 2/2 | yes | some_unsupported | 4/4 |  |
+| G02 | answerable | Which documents must travel with every shipment? | 2/2 | yes | all_supported | 4/4 |  |
 | G03 | answerable | What is ArcticLine's delivery window for dry-ice frozen shi… | 2/2 | yes | all_supported | 1/1 |  |
-| G04 | answerable | What has to happen if an ambient product stays above 30°C f… | 2/2 | yes | all_supported | 2/2 |  |
-| G05 | answerable | How often is temperature mapping of the cold rooms repeated? | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
-| G06 | answerable | Within how many days of delivery can a product be returned? | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G04 | answerable | What has to happen if an ambient product stays above 30°C f… | 2/2 | yes | no_citations | 2/2 |  |
+| G05 | answerable | How often is temperature mapping of the cold rooms repeated? | 2/2 | yes | all_supported | 1/1 |  |
+| G06 | answerable | Within how many days of delivery can a product be returned? | 2/2 | yes | all_supported | 1/1 |  |
 | G07 | answerable | What quality rating does Deccan Pharma Logistics have? | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
-| G08 | answerable | What temperatures were recorded for SH-2024-004? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G09 | answerable | Which product and batch were shipped in SH-2024-008, and wh… | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G10 | answerable | Who is the contact person for vendor V-004, and what is the… | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G11 | answerable | Which deviation report was raised for SH-2024-003? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G12 | answerable | Why was SH-2024-003 quarantined, and what corrective action… | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G13 | answerable | Which vendor handled the rejected frozen shipment, and what… | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G14 | answerable | A cold-chain consignment arrived at 11°C. What must we do, … | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G15 | answerable | What were the two temperature breaches in FY2024, and what … | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G16 | answerable | A vendor shipment is more than 48 hours late. Who do we esc… | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G17 | answerable | How long do the frozen sample kits stay usable? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G18 | answerable | Do we have to keep the old logger calibration paperwork? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G19 | answerable | Our truck broke down halfway to the customer. What now? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G20 | answerable | Which vendor has the best on-time delivery rate? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G21 | refusal | What is the status of shipment SH-2024-011? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G22 | refusal | What temperature should insulin pens be stored at? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G23 | refusal | Who is the CEO of NexaChain BioMed? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G24 | refusal | What's the capital of France? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G25 | trap | What fine do we pay if we break the storage rules? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
-| G26 | trap | What was the temperature breach rate in Q3 FY2024? | – | – | – | – | not run (stopped after repeated LLM errors; re-run resumes from cache) |
+| G08 | answerable | What temperatures were recorded for SH-2024-004? | 2/2 | yes | all_supported | 2/2 |  |
+| G09 | answerable | Which product and batch were shipped in SH-2024-008, and wh… | 2/2 | yes | all_supported | 3/3 |  |
+| G10 | answerable | Who is the contact person for vendor V-004, and what is the… | 2/2 | yes | all_supported | 2/2 |  |
+| G11 | answerable | Which deviation report was raised for SH-2024-003? | 2/2 | yes | no_citations | 1/1 |  |
+| G12 | answerable | Why was SH-2024-003 quarantined, and what corrective action… | 2/2 | yes | all_supported | 3/3 |  |
+| G13 | answerable | Which vendor handled the rejected frozen shipment, and what… | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G14 | answerable | A cold-chain consignment arrived at 11°C. What must we do, … | 2/2 | yes | all_supported | 2/2 |  |
+| G15 | answerable | What were the two temperature breaches in FY2024, and what … | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G16 | answerable | A vendor shipment is more than 48 hours late. Who do we esc… | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G17 | answerable | How long do the frozen sample kits stay usable? | 2/2 | yes | some_unsupported | 1/1 |  |
+| G18 | answerable | Do we have to keep the old logger calibration paperwork? | 2/2 | yes | some_unsupported | 1/1 |  |
+| G19 | answerable | Our truck broke down halfway to the customer. What now? | 2/2 | yes | all_supported | 2/2 |  |
+| G20 | answerable | Which vendor has the best on-time delivery rate? | – | – | – | – | LLMUnavailableError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This … |
+| G21 | refusal | What is the status of shipment SH-2024-011? | 2/2 | yes | no_citations | – | refused |
+| G22 | refusal | What temperature should insulin pens be stored at? | 2/2 | yes | no_citations | – | refused |
+| G23 | refusal | Who is the CEO of NexaChain BioMed? | 2/2 | yes | no_citations | – | refused |
+| G24 | refusal | What's the capital of France? | 2/2 | yes | no_citations | – | refused at retrieval |
+| G25 | trap | What fine do we pay if we break the storage rules? | 2/2 | yes | no_citations | – | refused |
+| G26 | trap | What was the temperature breach rate in Q3 FY2024? | 2/2 | yes | no_citations | – | refused |
 
 ## Answers that lost points
 
-**G02: Which documents must travel with every shipment?**
+**G17: How long do the frozen sample kits stay usable?**
 
-- Answer: Every shipment must include the following documents: - Tax Invoice [1] - Certificate of Analysis (CoA) [1] - Temperature log [1] - Batch/expiry information [1] Additionally, a signed Delivery Order is mandatory before dispatch [1]. For refrigerated items, the driver must sign the Cold Chain Handover Form [1].
-- Reference: A tax invoice, the Certificate of Analysis (CoA), the temperature log, and batch/expiry information.
-- Judge: correctness 2/2, faithful True, citations some_unsupported. The answer correctly identifies all the required documents and does not include any unsupported claims.
-- Unsupported citation [1]: Additionally, a signed Delivery Order is mandatory before dispatch. (entailment 0.009)
+- Answer: Based on the company documents, the FreezeGuard Biological Sample Kit (Product TL-FROZ-7700) has a shelf life of 18 months from the date of manufacture [1].
+- Reference: 18 months shelf life from manufacture (TL-FROZ-7700, FreezeGuard Biological Sample Kit). Optional: must not be refrozen once thawed.
+- Judge: correctness 2/2, faithful True, citations some_unsupported. The answer correctly identifies the 18-month shelf life from the date of manufacture for the FreezeGuard Biological Sample Kit as stated in the passage. It does not contradict the reference answer and includes all necessary information.
+- Unsupported citation [1]: Based on the company documents, the FreezeGuard Biological Sample Kit (Product TL-FROZ-7700) has a shelf life of 18 months from the date of manufacture. (entailment 0.036)
+
+**G18: Do we have to keep the old logger calibration paperwork?**
+
+- Answer: Yes, logger calibration certificates are retained for 3 years [1].
+- Reference: Yes: logger calibration certificates are retained for 3 years. Optional: loggers are calibrated every 6 months by an accredited lab.
+- Judge: correctness 2/2, faithful True, citations some_unsupported. The answer correctly states that logger calibration certificates are retained for 3 years, which is accurate according to the passage provided. It does not contradict the reference answer and includes the key fact without adding unnecessary information.
+- Unsupported citation [1]: Yes, logger calibration certificates are retained for 3 years. (entailment 0.539)
 
 
 ## Cost
 
-Answer model `gemini-3.8-flash`: 0 API calls, 4 from cache; judge `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48): 0 calls, 16 from cache; citations NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9): 0 LLM calls, 0 from cache. Tokens this run: answers {'calls': 0, 'prompt_tokens': 0, 'output_tokens': 0, 'thought_tokens': 0, 'seconds': 0.0, 'max_seconds': 0.0}, judge {'calls': 0, 'prompt_tokens': 0, 'output_tokens': 0, 'thought_tokens': 0, 'seconds': 0.0, 'max_seconds': 0.0}.
+Answer model `gemini-3.5-flash-lite`: 20 API calls, 0 from cache; judge `qwen2.5:7b` (local via Ollama, digest 845dbda0ea48): 32 calls, 0 from cache; citations NLI `cross-encoder/nli-deberta-v3-small` (entailment >= 0.9): 0 LLM calls, 0 from cache. Tokens this run: answers {'calls': 20, 'prompt_tokens': 12528, 'output_tokens': 692, 'thought_tokens': 948, 'seconds': 128.8, 'max_seconds': 29.1}, judge {'calls': 32, 'prompt_tokens': 20534, 'output_tokens': 2166, 'thought_tokens': 0, 'seconds': 87.4, 'max_seconds': 3.5}.
 
 ## Caveats
 

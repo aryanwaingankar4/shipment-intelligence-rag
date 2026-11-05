@@ -83,6 +83,10 @@ def build_structured_router(settings: Settings) -> StructuredRouter | None:
         return None
 
 
+# One attempt lost 3 of 9 live rewrites to brief 503s, each silently answering the wrong question.
+REWRITE_ATTEMPTS = 3
+
+
 def build_rewriter(settings: Settings) -> QueryRewriter | None:
     """None when rewriting is off. Short limits: a person is waiting for this call."""
     if settings.rewrite_provider == "off":
@@ -98,7 +102,7 @@ def build_rewriter(settings: Settings) -> QueryRewriter | None:
             raise RuntimeError("GEMINI_API_KEY is not set")
         llm = GeminiLLM(api_key=settings.gemini_api_key.get_secret_value(),
                         model=settings.rewrite_model or settings.gemini_model,
-                        temperature=0.0, max_output_tokens=512, max_retries=1,
+                        temperature=0.0, max_output_tokens=512, max_retries=REWRITE_ATTEMPTS,
                         timeout_s=settings.rewrite_timeout_s, thinking_level="low")
     return QueryRewriter(llm, max_messages=settings.rewrite_max_messages)
 

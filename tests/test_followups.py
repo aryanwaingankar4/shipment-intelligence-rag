@@ -255,3 +255,16 @@ def test_ollama_rewriter_needs_a_model():
 def test_gemini_rewriter_needs_a_key():
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
         build_rewriter(Settings(_env_file=None, rewrite_provider="gemini", gemini_api_key=None))
+
+
+def test_the_gemini_rewriter_survives_a_brief_503():
+    """Live, one attempt lost 3 of 9 rewrites, each silently answering the wrong question."""
+    from unittest.mock import patch
+
+    from shipment_rag.config import Settings
+    from shipment_rag.factory import REWRITE_ATTEMPTS, build_rewriter
+
+    settings = Settings(_env_file=None, rewrite_provider="gemini", gemini_api_key="not-a-real-key")
+    with patch("shipment_rag.factory.GeminiLLM") as gemini:
+        build_rewriter(settings)
+    assert gemini.call_args.kwargs["max_retries"] == REWRITE_ATTEMPTS > 1

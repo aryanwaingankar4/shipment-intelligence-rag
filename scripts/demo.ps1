@@ -104,6 +104,6 @@ Demo questions:
   1. Normal:     What is the shelf life of StableCap Dry Powder?
   2. Table:      How many vials of TL-COLD-9001 were shipped in total?
   3. ID:         Why was shipment SH-2024-007 rejected?
-  4. Follow-up:  What corrective action was taken?   (right after 3; needs -FollowUps)
+  4. Follow-up:  What is that vendor's on-time delivery rate?   (right after 3; needs -FollowUps)
   5. Off-topic:  What is the capital of France?
 "@

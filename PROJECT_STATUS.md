@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | **Current version** | 0.4.0 |
-| **Current phase** | Stage 2 (generation eval) in progress: answer model switched to `gemini-3.5-flash-lite`, so all 26 golden questions are scored again, on the Colab or Kaggle runner. No generation numbers yet |
+| **Current phase** | Stage 2 partial: 21 of 26 golden questions scored on `gemini-3.5-flash-lite`, on Kaggle; the other 5 hit 503s. Stages 2-4 going into `main` |
 | **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (stacked on Stage 2); `stage-4-streaming-followups` (stacked on Stage 3). All three are on GitHub as backup only, with no PRs |
 | **Last updated** | 2026-11-05 |
 | **Owner** | Aryan Waingankar |
@@ -135,28 +135,42 @@ offline, while the GPU, Ollama install and Gemini steps have not run at all.
 as the Colab one (a test compares them), built to run unattended with "Save & Run All": the key comes
 from Kaggle Secrets and saved answers from any attached input. A failed step is recorded rather than
 raised, later steps that depend on it are skipped, and the last step always writes
-`/kaggle/working/kaggle_results_<time>.zip` with the failures listed in `run_info.json`. **It has never
-run on Kaggle either.** Offline tests cover its file structure, step logic, zip, key check and restore. 337 tests pass; 17 of 17
-deliberate breaks to the notebook were caught.
+`/kaggle/working/kaggle_results_<time>.zip` with the failures listed in `run_info.json`. **It ran on Kaggle on
+2026-11-05 with no failed steps**, which is where the Stage 2 and D5 results come from. The Colab one has still
+never run. Offline tests also cover its file structure, step logic, zip, key check and restore.
 
 **Demo setup and v0.4.0, 2026-11-05.** `scripts/demo.ps1` starts the API and UI with no Docker or Ollama.
 Rewriting is off by default; `-FollowUps` uses the Gemini rewriter. Version 0.4.0 covers Stages 2-4, with
 Stage 2 still marked partial. Live calls with no local models loaded, both on `gemini-3.5-flash-lite`:
 streaming returned a correct, cited answer in 1.7 s, and the rewriter produced "What corrective action was
 taken for shipment SH-2024-007?". The table demo answers were run for real (650 vials; 2 breaches).
-**Not confirmed:** the API and UI together, because free RAM stayed under the 6 GB rule and the API loads MiniLM and the
-reranker. `scripts/demo.ps1 -Check` ran. Starting the demo has not.
+
+**Live demo test, 2026-11-05, through `scripts/demo.ps1 -FollowUps`, Ollama stopped.** All 5 demo questions
+answered over `/v1/query/stream`, the endpoint the UI uses: StableCap 36 months [1]; 650 vials from the table;
+SH-2024-007 cause with citations; ArcticLine 88% via a rewrite; France refused with no sources. The owner's own
+questions from the browser reached the API too. Memory: API 760 MB working set, peak 789 MB, 1.6 GB committed; UI
+about 70 MB. Free RAM went from 4.3 to 2.9 GB with the demo running.
+
+- **Bug found and fixed: 3 of 9 live rewrites failed.** The real error is a Gemini 503. The rewriter had one attempt,
+  so it fell back silently: one follow-up got a wrong answer and another a refusal. It now gets 3 attempts
+  (`REWRITE_ATTEMPTS`). After the fix, 4 of 4 rewrites worked, a small sample. The cost is latency: follow-ups took
+  6-42 s in that run.
+- **Model flake:** "-8°柏" for "-8°C" appeared in 2 of the 5 SH-2024-007 answers from the API. It is in the raw bytes
+  and is not a decoding fault, so it comes from flash-lite. Not fixed.
+- **Demo follow-up changed.** "What corrective action was taken?" returned immediate actions or "under review" once
+  rewritten, not the CAPA list, the same weakness as the F01 miss. The demo now asks for the vendor's on-time rate.
 
 **Not verified**
-1. **Whether rewriting fixes the paraphrase weakness (D5).** That part of `scripts/eval_rewrite.py` was
-   stopped: the machine hit 0.1 GB free of 15.7 GB with the 4.8 GB model loaded, the session's memory
-   guard stopped the task, and its Python process kept running until it was stopped by hand. No result.
-2. **Pieces arriving over time on a real socket, and a live run through the API and page.** The test
-   client buffers responses. The check is written but was not started, because it loads the same model.
-3. **Gemini streaming against the real service.** Tested only against a fake client; Gemini was returning
-   503s and the stage was to spend no quota.
-4. A browser, and how a client disconnecting mid-answer behaves on a real server (the abandon path is
-   tested only by closing the generator).
+1. ~~Whether rewriting fixes the paraphrase weakness (D5).~~ **Measured on Kaggle:** paraphrased 14 to 18 of 20,
+   owner-written 8 to 10 of 10, all in-scope 50 to 53 of 57, but ID-heavy 20 to 19 of 20 and off-domain refused 6 to
+   5 of 6 (a prompt-injection question got past the cutoff). 82 rewrites, none fell back. Rewriting stays off for
+   lone questions. See `reports/stage4_rewrite.md`.
+2. ~~A live run through the API and page.~~ Done, see the live demo test above. **Still unmeasured:** whether text
+   visibly builds up over time. Answers arrived in 2-5 pieces, but they are short, so most of the wait is before
+   the first piece.
+3. ~~Gemini streaming against the real service.~~ Confirmed on `gemini-3.5-flash-lite`.
+4. How a client disconnecting mid-answer behaves on a real server (the abandon path is tested only by closing
+   the generator).
 
 ### Stage 3 — Structured query path — 🔶 built, offline only, 2026-11-02
 
@@ -193,6 +207,34 @@ of the 102 existing eval questions the table claims 10, all correct when checked
 test runner, offline, with no exceptions) and a real API server with real models.
 
 ### Stage 2 — Generation eval — 🔶 in progress, 2026-11-02
+
+**Results on 2026-11-05: 21 of 26 scored (Kaggle, commit `c77a767`, no failed steps).** Report:
+`reports/stage2_generation.md`. Labels: `data/eval/citation_labels_golden.json`.
+
+| Metric | Result |
+|---|---|
+| Answerable fully correct (judge) | 15/15 |
+| Key facts, exact string match | 28/28 |
+| Wrongly refused | 0/15 |
+| No unsupported claims (judge) | 15/15 |
+| At least one citation | 13/15 (G04 and G11 cite nothing) |
+| Cited answers passing the checker | 11/13 |
+| Cited sentences supported, by hand | 17/17 |
+| Should-refuse refused | 4/4 (1 at retrieval, 3 by the model) |
+| Traps handled, nothing invented | 2/2 |
+| Calibration on the GPU, uncached | 35/35 |
+| Retrieval gate on Kaggle | 89% (same as the laptop's as-written score) |
+
+- **Not scored, all 503s:** G07 (single-doc), G13, G15, G16 (multi-doc), G20 (aggregate). Four of the five are the
+  hardest kinds, so 15/15 is not a full-set result. A Kaggle rerun with the results zip attached needs 5 Gemini calls.
+- **Blind hand-label check (labels by Claude, not the owner; commit `e4df0bd` precedes opening the report).** All 15
+  listed sentences are supported. The checker flagged 2 (G17 "Based on the company documents, ..." at 0.036 and G18
+  "Yes, ..." at 0.539), so 13/15 agreement and 2 false alarms. The set has no wrong citations, so it can't measure
+  catching them; calibration covers that on planted cases. No tuning, per D9.
+- **Bug found, not fixed: `cited_claims` skips multi-number markers.** `[1, 3]` is not parsed, so 2 of 17 cited
+  sentences (G12, G14) were never checked. By hand both are supported. Left alone tonight so the code matches the
+  measured run. Fix it before the next full scoring run.
+- **Model flake:** live demo runs returned "-8°柏" for "-8°C" on one question, intermittently, in the API's raw bytes.
 
 **Answer model switched on 2026-11-05 (owner decision; this overrides "Answers stay on
 `gemini-3.8-flash`" below).** `gemini-3.8-flash` returned 503 on every try, while one live answer on
@@ -600,10 +642,10 @@ Run locally on 2026-11-01 (Windows 11, Python 3.12, CPU):
 | D1 | ~~Brand mismatch (docs "TraceLink BioMed" vs UI "NexaChain BioMed")~~ | ✅ **Resolved in Stage 0** — docs renamed to NexaChain BioMed |
 | D2 | Where to host first | See Phase 5 options below. Cheapest credible path: one small VM + docker compose + Caddy (HTTPS). |
 | D4 | ~~Reconcile with `origin/main`~~ | ✅ **Resolved in Stage 0**: rebased, `aa4e065` dropped, PR to `main` open for owner review |
-| D5 | **Fixing the paraphrase weakness** (70% hit@3; cross-encoder scores colloquial questions very low) | Options, cheapest first: (a) LLM query rewriting into document vocabulary, which fits Stage 4 (it already adds rewriting for follow-ups) but costs one LLM call per question; (b) a stronger reranker such as `BAAI/bge-reranker-base` (~280M params, about 3× the image weight and CPU latency), which needs owner approval as a heavier model; (c) more/better embeddings. Recommendation: (a) in Stage 4, measured on the paraphrase slice. |
+| D5 | **Fixing the paraphrase weakness** (70% hit@3; cross-encoder scores colloquial questions very low) | Options, cheapest first: (a) LLM query rewriting into document vocabulary, which fits Stage 4 (it already adds rewriting for follow-ups) but costs one LLM call per question; (b) a stronger reranker such as `BAAI/bge-reranker-base` (~280M params, about 3× the image weight and CPU latency), which needs owner approval as a heavier model; (c) more/better embeddings. Recommendation: (a) in Stage 4, measured on the paraphrase slice. **Measured 2026-11-05:** rewriting lifts paraphrases 14 to 18 of 20 but costs one ID question and one off-domain refusal, so it stays on for follow-ups only. |
 | D6 | ~~CI retrieval gate 90% vs 89% with owner paraphrases~~ | ✅ **Resolved**: gate lowered to 85%, a regression guard below the current 89% baseline rather than a target |
 | D7 | Finishing the generation eval under a 20 req/day free tier | ✅ **Decided: (b)**, judge on a different model. Pro models aren't usable on this free tier, so the judge is `gemini-3.7-flash`; calibration gates the scoring. Resumes day by day from the cache. |
-| D9 | ~~NLI citation false alarms on full-length chunks~~ | ✅ **Resolved**: whole passage OR any single line at 0.9, bullets read with their intro; 12/12 on fresh full-length cases. Hand-label agreement on golden answers still to report |
+| D9 | ~~NLI citation false alarms on full-length chunks~~ | ✅ **Resolved**: whole passage OR any single line at 0.9, bullets read with their intro; 12/12 on fresh full-length cases. Blind hand labels on flash-lite answers: 13/15 agreement, 2 false alarms, no tuning |
 | D8 | **Live demo (Stage 5) quota**: 20 req/day on the free tier would be used up by a few visitors | Paid tier with a budget cap, or a higher-quota model for the public demo, plus per-key rate limiting and answer caching. Decide before Stage 5. |
 | D3 | Gemini model lifetime | Default is now **`gemini-3.5-flash-lite`** (2026-11-05, after `gemini-3.8-flash` kept returning 503). Google retires models regularly: run `shipment-rag models` before each release. A retired model now fails fast at startup with a clear message instead of failing every request. |
 
@@ -668,6 +710,7 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-05 | Gemini rewriter gets 3 attempts, not 1 | One attempt lost 3 of 9 live rewrites to brief 503s, each silently answering the wrong question. Slower is better than wrong |
 | 2026-11-05 | Merge main into the later stage branches instead of rebasing (owner allowed either) | Each PR is squash-merged anyway, and no remote history gets rewritten |
 | 2026-11-05 | Answer model `gemini-3.5-flash-lite` for Stage 2 and as the default (owner decision) | `gemini-3.8-flash` returned 503 on every try; flash-lite gave a complete, cited live answer. Results name the model measured |
 | 2026-11-02 | Local `qwen2.5:7b` judge via Ollama (owner decision) | Free-tier Gemini was too unreliable to judge with; no quota, and independent of the answer model |
