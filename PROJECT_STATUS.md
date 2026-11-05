@@ -155,7 +155,7 @@ about 70 MB. Free RAM went from 4.3 to 2.9 GB with the demo running.
   so it fell back silently: one follow-up got a wrong answer and another a refusal. It now gets 3 attempts
   (`REWRITE_ATTEMPTS`). After the fix, 4 of 4 rewrites worked, a small sample. The cost is latency: follow-ups took
   6-42 s in that run.
-- **Model flake:** "-8°柏" for "-8°C" appeared in 2 of the 5 SH-2024-007 answers from the API. It is in the raw bytes
+- **Model flake:** "-8°柏" for "-8°C" appeared in 2 of the 6 SH-2024-007 answers from the API. It is in the raw bytes
   and is not a decoding fault, so it comes from flash-lite. Not fixed.
 - **Demo follow-up changed.** "What corrective action was taken?" returned immediate actions or "under review" once
   rewritten, not the CAPA list, the same weakness as the F01 miss. The demo now asks for the vendor's on-time rate.
