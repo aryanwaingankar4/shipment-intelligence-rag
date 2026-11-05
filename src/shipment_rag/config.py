@@ -62,7 +62,20 @@ class Settings(BaseSettings):
     # Gemini 2.5 models use a token budget instead; when set, it overrides the level.
     llm_thinking_budget: int | None = None
     llm_max_retries: int = 4
-    llm_timeout_s: float = 30.0
+    # Sent to Gemini as the server-side deadline: 30 s produced 504 DEADLINE_EXCEEDED on
+    # gemini-3.8-flash during the Stage 2 eval runs.
+    llm_timeout_s: float = 60.0
+
+    # --- generation eval (shipment-rag eval-gen) ---
+    judge_provider: Literal["gemini", "ollama"] = "gemini"
+    judge_model: str = ""  # gemini: empty = same as GEMINI_MODEL; ollama: required
+    ollama_base_url: str = "http://localhost:11434"
+    judge_thinking_level: Literal["", "minimal", "low", "medium", "high"] = "medium"  # gemini
+    citation_checker: Literal["llm", "nli"] = "nli"  # llm = the judge model, one call per citation
+    nli_model: str = "cross-encoder/nli-deberta-v3-small"
+    nli_min_entailment: float = 0.9
+    eval_rpm: float = 8.0  # max uncached Gemini calls per minute (a local judge is not limited)
+    eval_cache_dir: Path = Path("data/eval/.cache")
 
     # --- API ---
     # Comma-separated list of accepted X-API-Key values. Empty = auth disabled (dev only).

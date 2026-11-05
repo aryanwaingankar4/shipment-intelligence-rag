@@ -2,7 +2,8 @@
 
 from shipment_rag.config import Settings
 from shipment_rag.embeddings import Embedder, Reranker
-from shipment_rag.llm import GeminiLLM
+from shipment_rag.evaluation.citation_check import LLMSupportChecker, NLISupportChecker
+from shipment_rag.llm import GeminiLLM, OllamaLLM
 from shipment_rag.pipeline import RAGPipeline
 from shipment_rag.retrieval import Retriever
 from shipment_rag.vectorstore import get_collection
@@ -38,10 +39,38 @@ def build_llm(settings: Settings) -> GeminiLLM:
     )
 
 
-def build_pipeline(settings: Settings, retriever: Retriever | None = None) -> RAGPipeline:
+def build_judge_llm(settings: Settings) -> GeminiLLM | OllamaLLM:
+    """LLM-as-judge for eval-gen: deterministic (temperature 0), on Gemini or a local model."""
+    if settings.judge_provider == "ollama":
+        if not settings.judge_model:
+            raise RuntimeError("JUDGE_PROVIDER=ollama needs JUDGE_MODEL, e.g. qwen2.5:7b")
+        return OllamaLLM(model=settings.judge_model, base_url=settings.ollama_base_url)
+    if settings.gemini_api_key is None or not settings.gemini_api_key.get_secret_value():
+        raise RuntimeError("GEMINI_API_KEY is not set")
+    return GeminiLLM(
+        api_key=settings.gemini_api_key.get_secret_value(),
+        model=settings.judge_model or settings.gemini_model,
+        temperature=0.0,
+        max_output_tokens=4096,
+        max_retries=settings.llm_max_retries,
+        timeout_s=max(settings.llm_timeout_s, 120.0),  # judge thinks longer
+        thinking_level=settings.judge_thinking_level,
+    )
+
+
+def build_citation_checker(settings: Settings, llm) -> LLMSupportChecker | NLISupportChecker:
+    """Per-citation support check for eval-gen. llm is only used by the 'llm' checker."""
+    if settings.citation_checker == "nli":
+        return NLISupportChecker(settings.nli_model, settings.nli_min_entailment)
+    return LLMSupportChecker(llm)
+
+
+def build_pipeline(
+    settings: Settings, retriever: Retriever | None = None, llm=None
+) -> RAGPipeline:
     return RAGPipeline(
         retriever=retriever or build_retriever(settings),
-        llm=build_llm(settings),
+        llm=llm or build_llm(settings),
         company=settings.company_name,
         assistant=settings.assistant_name,
     )

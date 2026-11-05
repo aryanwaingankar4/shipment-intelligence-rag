@@ -20,7 +20,13 @@ def test_no_relevant_chunks_refuses_without_calling_llm(make_pipeline):
     llm = FakeLLM()
     result = make_pipeline([], llm).answer("What is the capital of France?")
     assert result.refused and result.answer == REFUSAL
-    assert llm.calls == []
+    assert llm.calls == [] and not result.llm_called
+
+
+def test_context_keeps_prompt_passages_even_when_model_refuses(make_pipeline, chunk):
+    result = make_pipeline([chunk], FakeLLM(reply=REFUSAL)).answer("q")
+    assert result.llm_called and result.refused
+    assert result.sources == [] and result.context == [chunk]
 
 
 def test_model_refusal_drops_sources(make_pipeline, chunk):
