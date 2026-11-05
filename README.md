@@ -128,6 +128,24 @@ CI builds both images, but the full `docker compose up` has not been run end to 
 
 *Screenshots are from the Colab prototype (Phase 3).*
 
+## Live demo
+
+The Streamlit UI running live against the API on a laptop. Each answer is labelled with where it came from.
+
+![A cited answer from the product manual](assets/demo_1.png)
+
+*A document question: StableCap's shelf life comes from the product manual, with a citation `[1]` and the
+source listed under the answer.*
+
+![A table answer, a cited incident explanation and a refusal](assets/demo_2.png)
+
+*Three routes in one conversation: the vial count comes from the shipment table with no AI model; the SH-2024-007
+rejection is explained from the incident report with citations; the off-topic question is refused.*
+
+![The same conversation from the start](assets/demo_3.png)
+
+*The same conversation from the start. "Understood as" shows the question after the follow-up rewriter has run.*
+
 ## Results
 
 Retrieval is evaluated without any LLM calls (`shipment-rag eval --mode all`), so it runs
