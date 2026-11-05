@@ -1,4 +1,5 @@
-"""RAG orchestration: retrieve -> guardrail -> grounded prompt -> LLM -> audit log."""
+"""Answer orchestration: shipment table if it can answer exactly, otherwise
+retrieve -> guardrail -> grounded prompt -> LLM. Every answer goes to the audit log."""
 
 import logging
 import time
@@ -6,6 +7,7 @@ import time
 from shipment_rag.llm import LLM
 from shipment_rag.models import RAGAnswer, RetrievedChunk
 from shipment_rag.retrieval import Retriever
+from shipment_rag.structured.router import ROUTE_TABLE, StructuredResult, StructuredRouter
 
 log = logging.getLogger("shipment_rag.audit")
 
@@ -44,9 +46,11 @@ class RAGPipeline:
         llm: LLM,
         company: str = "NexaChain BioMed",
         assistant: str = "Nova",
+        structured: StructuredRouter | None = None,
     ):
         self.retriever = retriever
         self.llm = llm
+        self.structured = structured
         self.system_prompt = SYSTEM_PROMPT.format(
             assistant=assistant, company=company, refusal=REFUSAL
         )
@@ -55,6 +59,10 @@ class RAGPipeline:
         self, question: str, custom_instructions: str = "", request_id: str = ""
     ) -> RAGAnswer:
         t0 = time.perf_counter()
+        table_answer = self._answer_from_table(question, request_id, t0)
+        if table_answer is not None:
+            return table_answer
+
         chunks = self.retriever.retrieve(question)
 
         if not chunks:
@@ -80,6 +88,7 @@ class RAGPipeline:
                 "request_id": request_id,
                 "question": question,
                 "refused": result.refused,
+                "route": result.route,
                 "sources": sorted({c.source for c in result.sources}),
                 "rerank_scores": [c.rerank_score for c in chunks],
                 "num_chunks": len(chunks),
@@ -87,6 +96,48 @@ class RAGPipeline:
             },
         )
         return result
+
+
+    def _answer_from_table(self, question: str, request_id: str, t0: float) -> RAGAnswer | None:
+        if self.structured is None:
+            return None
+        try:
+            found = self.structured.answer(question)
+        except Exception:  # never let the table break a question the documents could answer
+            log.exception("structured_query_failed", extra={"request_id": request_id})
+            return None
+        if found is None:
+            return None
+        result = _table_answer(found, _ms(t0))
+        log.info(
+            "rag_query",
+            extra={
+                "request_id": request_id,
+                "question": question,
+                "refused": result.refused,
+                "route": result.route,
+                "template": found.query.template,
+                "latency_ms": result.latency_ms,
+            },
+        )
+        return result
+
+
+def _table_answer(found: StructuredResult, latency_ms: int) -> RAGAnswer:
+    sources = [
+        RetrievedChunk(text=f"{row['shipment_id']}: {row['product']}, {row['status']}, "
+                            f"{row['origin']} to {row['destination']}",
+                       source="shipment_log.txt", section=f"SHIPMENT {row['shipment_id']}",
+                       embed_score=None, rerank_score=None)
+        for row in found.rows if "shipment_id" in row
+    ] or [RetrievedChunk(text=found.answer, source="shipment_log.txt", section="shipment table",
+                         embed_score=None, rerank_score=None)]
+    return RAGAnswer(
+        found.answer, [] if found.refused else sources, refused=found.refused,
+        latency_ms=latency_ms, route=ROUTE_TABLE,
+        structured_query={"template": found.query.template, "params": found.query.params,
+                          "rows": found.rows},
+    )
 
 
 def _ms(t0: float) -> int:

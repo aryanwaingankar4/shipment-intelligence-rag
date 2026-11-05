@@ -245,7 +245,11 @@ def home_page():
 
 
 # ===================== CHAT PAGE =====================
-def render_message(role, content, sources=None):
+ROUTE_LABELS = {"shipment_table": "Answered from: shipment table (exact query, no AI model)",
+                "documents": "Answered from: company documents"}
+
+
+def render_message(role, content, sources=None, route=None):
     # escape everything user- or model-generated before it goes into raw HTML
     safe = html.escape(content)
     if role == "user":
@@ -255,6 +259,9 @@ def render_message(role, content, sources=None):
     initial = html.escape(ss.assistant_name[:1].upper() or "N")
     st.markdown(f"<div class='chat-row'><div class='avatar nova'>{initial}</div>"
                 f"<div class='bubble nova'>{safe}</div></div>", unsafe_allow_html=True)
+    if route in ROUTE_LABELS:
+        st.markdown(f"<div class='sources'>{html.escape(ROUTE_LABELS[route])}</div>",
+                    unsafe_allow_html=True)
     if sources:
         names = sorted({s["source"] for s in sources})
         st.markdown(f"<div class='sources'>Sources: {html.escape(', '.join(names))}</div>",
@@ -280,7 +287,7 @@ def chat_page():
 
     st.markdown("---")
     for msg in ss.messages:
-        render_message(msg["role"], msg["content"], msg.get("sources"))
+        render_message(msg["role"], msg["content"], msg.get("sources"), msg.get("route"))
 
     if prompt := st.chat_input(f"Ask {bot} about products, shipments, compliance..."):
         ss.messages.append({"role": "user", "content": prompt})
@@ -289,9 +296,9 @@ def chat_page():
             try:
                 data = ask_api(prompt, ss.custom_instructions)
                 msg = {"role": "assistant", "content": data["answer"],
-                       "sources": data.get("sources", [])}
+                       "sources": data.get("sources", []), "route": data.get("route")}
                 ss.messages.append(msg)
-                render_message("assistant", msg["content"], msg["sources"])
+                render_message("assistant", msg["content"], msg["sources"], msg["route"])
             except AssistantUnavailable:
                 st.markdown(f"<div class='error-card'><b>{html.escape(bot)} is currently "
                             "unavailable.</b> Please try again shortly.</div>",

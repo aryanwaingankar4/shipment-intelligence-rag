@@ -22,7 +22,7 @@ class RetrievedChunk:
     source: str
     section: str
     embed_score: float | None  # cosine similarity 0..1; None if only BM25 found it
-    rerank_score: float  # cross-encoder logit
+    rerank_score: float | None  # cross-encoder logit; None for a shipment-table row
 
 
 @dataclass
@@ -33,4 +33,6 @@ class RAGAnswer:
     latency_ms: int
     # passages given to the LLM, in prompt order: what [n] citations refer to
     context: list[RetrievedChunk] = field(default_factory=list)
-    llm_called: bool = False  # False when refused at retrieval
+    llm_called: bool = False  # False when refused at retrieval or answered from the table
+    route: str = "documents"  # which path answered: "documents" or "shipment_table"
+    structured_query: dict | None = None  # the template, params and rows behind a table answer

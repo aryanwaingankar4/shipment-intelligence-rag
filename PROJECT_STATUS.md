@@ -7,7 +7,7 @@
 |---|---|
 | **Current version** | 0.3.2 |
 | **Current phase** | Stage 2 (generation eval) in progress: judge and calibration pass; 5/26 golden questions scored before the Gemini daily quota ran out; waiting for quota to finish |
-| **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local) |
+| **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (local, stacked on Stage 2) |
 | **Last updated** | 2026-11-02 |
 | **Owner** | Aryan Waingankar |
 | **Repo** | github.com/aryanwaingankar4/shipment-intelligence-rag |
@@ -79,10 +79,43 @@ queue-based ingestion.
 | 0 | Git cleanup + Phase 4 close-out (D1 rename, live checks) | ✅ done (Docker check pending, see §4) |
 | 0.5 | Fixes from the owner's live check: truncation, model default + 404, secret scanning | ✅ done |
 | 1 | Hybrid search (BM25 + RRF), bigger eval set, vector-vs-hybrid table | ✅ done (PR #2 merged) |
-| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), nightly workflow | 🔶 built; full run pending quota (D7) |
-| 3 | Structured query path for aggregate shipment questions + router | ⬜ |
+| 2 | Generation eval (`eval-gen`: faithfulness, correctness, citations), manual workflow | 🔶 built; full run pending quota |
+| 3 | Structured query path for aggregate shipment questions + router | 🔶 built and tested offline on `stage-3-structured-query`; UI not yet seen live |
 | 4 | SSE streaming + follow-up questions (query rewriting) | ⬜ |
 | 5 | Real login, rate limiting, GHCR images, VM + Caddy deploy, CD | ⬜ (ask before spending money) |
+
+### Stage 3 — Structured query path — 🔶 built, offline only, 2026-11-02
+
+Built while waiting for Gemini quota, on `stage-3-structured-query`, stacked on Stage 2 because it
+needs Stage 2's pipeline changes. No Gemini calls and no new dependencies (`sqlite3` is stdlib).
+Version bump is held until Stage 2 lands, to avoid clashing with its 0.4.0.
+
+**Built**
+- `structured/store.py`: parses `shipment_log.txt` into a read-only in-memory SQLite table. A record
+  that doesn't parse is an error, not a silently missing row. Fixed query templates and bound
+  parameters only; `query_only` plus an authorizer denies everything except reads.
+- `structured/router.py`: plain rules. Removes what it recognises and claims the question only if no
+  unknown word is left. Templates: count, list, total quantity, breach rate, breakdown by status,
+  hottest/coldest, per-shipment field lookup.
+- `pipeline.py`: tries the table first; any table error falls back to the documents.
+  `RAGAnswer.route` and `structured_query` go out through the API; the UI shows the path.
+- `eval-gen` turns the table off, because the golden set measures the document path.
+- `STRUCTURED_QUERIES=true` switches it; if the log can't be loaded, documents still answer.
+
+**Why rules, not an LLM router or text-to-SQL:** no quota, the same result every time, testable
+offline, and nothing model-written ever reaches the database. Trade-off: unusual wording falls through
+to the documents (all 10 owner paraphrases did), which is safe but misses some exact answers.
+
+**Found while building**
+1. "accepted by Dr. Anita Rao" answered "0 shipments" because the log stores the name with a dot. A
+   test caught it. The filter now uses the name as stored.
+2. "Highest temperature for TL-COLD-9001" would have ignored the product: extremes now refuse filters.
+
+**Verified (offline):** table totals match the log's summary line; 29/29 table and 19/19 document
+routing cases in `structured_eval.json` (written alongside the router, so these are regression tests);
+of the 102 existing eval questions the table claims 10, all correct when checked against the log.
+
+**Not verified:** the Streamlit page in a browser and a real API server with real models.
 
 ### Stage 2 — Generation eval — 🔶 in progress, 2026-11-02
 
@@ -548,6 +581,7 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 |---|---|---|
 | 2026-11-02 | Local `qwen2.5:7b` judge via Ollama (owner decision) | Free-tier Gemini was too unreliable to judge with; no quota, and independent of the answer model |
 | 2026-11-02 | Check citations one at a time, NLI at 0.9 minimum entailment (owner decision) | The judge could not match `[n]` to passages; NLI is about 200x faster with no false alarms on the hand-written cases. False alarms on real chunks are open (D9) |
+| 2026-11-02 | Rule-based router and fixed SQL templates, no text-to-SQL | No quota, deterministic, and no model-written SQL reaches the database; unclear questions fall through to documents |
 | 2026-11-02 | NLI scores the whole passage and each line (owner decision, D9) | Multi-rule chunks made NLI answer neutral on correct claims; 12/12 on fresh full-length cases on the first try |
 | 2026-11-02 | `eval-gen.yml` manual only (owner decision) | Runners have no Ollama, so a nightly run would judge differently from the published results |
 | 2026-11-02 | C4 stretched-claim citation is a known limit, not gated (owner decision) | No cutoff separates it from correct sentences (0.979 vs 0.982), and the judge still catches that answer |
