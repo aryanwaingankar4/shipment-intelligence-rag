@@ -6,18 +6,35 @@ answers that cite the company documents and refuse anything outside them.
 
 ![Home](assets/Home_page.png)
 
+## Project status
+
+| Part | State |
+|---|---|
+| Retrieval (hybrid search, reranking, refusal cutoff) | Done, measured below, checked in CI |
+| Exact shipment questions from a table | Done, tested offline |
+| Streaming answers and follow-up questions | Built and tested offline. Gemini streaming and rewriting each confirmed with a live call; the full API and UI together are not yet confirmed live |
+| Generation eval (answer quality) | **In progress / partial:** the harness works, no final numbers yet |
+| Public deployment and real login | Not started: the UI login is a demo login |
+
 ## Architecture
 
 ```
-            ┌────────────┐   HTTP    ┌──────────────────────────────┐       ┌───────────┐
- user ────▶ │ Streamlit  │ ────────▶ │ FastAPI  /v1/query           │ ────▶ │  Gemini   │
-            │ UI (ui/)   │  X-API-Key│  retrieve → rerank → prompt  │       │  (LLM)    │
-            └────────────┘           └──────────────┬───────────────┘       └───────────┘
-                                                    │ query
-                                             ┌──────▼──────┐      ┌───────────────────┐
-                                             │  ChromaDB   │ ◀─── │ ingest job        │
-                                             │  (server)   │      │ data/docs/*.txt   │
-                                             └─────────────┘      └───────────────────┘
+ user --> Streamlit UI --> FastAPI  POST /v1/query, or /v1/query/stream for live text
+                              |
+                              |  follow-up? rewrite it to stand alone (optional, one small LLM call)
+                              v
+                       rule-based router
+                              |
+        exact shipment question | everything else
+              +---------------+----------------+
+              v                                v
+   read-only SQLite table          hybrid search: ChromaDB + BM25, fused by RRF
+   fixed SQL templates                         v
+   no LLM call                     cross-encoder rerank, keep the top 3
+                                               v
+                                   nothing relevant? refuse with no LLM call
+                                               v
+                                   Gemini answers only from those passages, with citations
 ```
 
 | Stage | Choice |
@@ -33,7 +50,52 @@ answers that cite the company documents and refuse anything outside them.
 | Streaming | Answers arrive over server-sent events while they are written (`POST /v1/query/stream`) |
 | Guardrails | Refuse without an LLM call when nothing relevant is retrieved; strict grounded system prompt |
 
-## Quick start (Docker — recommended)
+## Run locally (no Docker)
+
+You need Python 3.12, [uv](https://docs.astral.sh/uv/) and a Gemini API key. Ollama isn't needed to run
+the app, only for the optional local judge and rewriter.
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv --index-strategy unsafe-best-match \
+    --extra-index-url https://download.pytorch.org/whl/cpu torch
+uv pip install --python .venv -e ".[dev]" -r ui/requirements.txt
+
+cp .env.example .env                    # then set GEMINI_API_KEY
+# Windows: .venv\Scripts\activate   |  macOS/Linux: source .venv/bin/activate
+shipment-rag ingest                     # builds data/chroma_db
+shipment-rag eval                       # retrieval quality check, no LLM calls
+```
+
+Then start each part in its own terminal:
+
+```bash
+uvicorn shipment_rag.api.main:create_app --factory --port 8080   # API, docs at /docs
+streamlit run ui/streamlit_app.py                                # UI at http://localhost:8501
+```
+
+The login is demo / demo123. The UI reads real environment variables, not `.env`, so if you set `API_KEYS`
+or `UI_PASSWORD` in `.env`, also export `API_KEY` and `UI_PASSWORD` in the UI's terminal.
+
+### Demo on a low-memory Windows laptop
+
+```powershell
+.\scripts\demo.ps1             # follow-up rewriting off
+.\scripts\demo.ps1 -FollowUps  # also understand follow-ups, with one extra Gemini call for each
+.\scripts\demo.ps1 -Check      # show what would run, and start nothing
+```
+
+It uses `gemini-3.5-flash-lite` and never starts Ollama, loads your `.env`, starts both parts in their own
+windows and opens the browser. The API still loads two small local models, MiniLM and the reranker,
+because every document question is embedded and reranked on the machine.
+
+Tests and lint: `pytest` and `ruff check src tests ui scripts`.
+
+Secrets: enable the pre-commit scan once per clone with `git config core.hooksPath .githooks`
+(it also runs in CI). Real keys only ever go in `.env`, which is gitignored.
+`shipment-rag models` lists the Gemini models your key can use.
+
+## Run with Docker
 
 ```bash
 cp .env.example .env          # then set GEMINI_API_KEY
@@ -45,28 +107,7 @@ docker compose up --build
 
 Re-index after editing anything in `data/docs/`: `docker compose run --rm ingest`
 
-## Local development (no Docker)
-
-```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv --index-strategy unsafe-best-match \
-    --extra-index-url https://download.pytorch.org/whl/cpu torch
-uv pip install --python .venv -e ".[dev]" -r ui/requirements.txt
-
-# Windows: .venv\Scripts\activate   |  macOS/Linux: source .venv/bin/activate
-shipment-rag ingest                     # builds data/chroma_db
-shipment-rag eval                       # retrieval quality check, no LLM calls
-shipment-rag ask "Why was SH-2024-007 rejected?"
-
-uvicorn shipment_rag.api.main:create_app --factory --port 8080
-streamlit run ui/streamlit_app.py
-```
-
-Tests and lint: `pytest` and `ruff check src tests ui scripts`.
-
-Secrets: enable the pre-commit scan once per clone with `git config core.hooksPath .githooks`
-(it also runs in CI). Real keys only ever go in `.env`, which is gitignored.
-`shipment-rag models` lists the Gemini models your key can use.
+CI builds both images, but the full `docker compose up` has not been run end to end.
 
 ## Example queries
 
@@ -209,7 +250,7 @@ top 3 passages, so an answer can't see all 10 records. Those questions now go to
 an independent measure. The 102 existing questions predate the router, which makes them the better
 check that it doesn't over-claim. It has one data source so far: only the shipment log is a table.
 
-### Generation eval (in progress)
+### Generation eval (in progress / partial)
 
 Answer quality is being scored on **`gemini-3.5-flash-lite`**, on 26 golden questions. The default moved
 from `gemini-3.8-flash` because that model returned 503 on every try, so the numbers will describe
@@ -227,6 +268,11 @@ time, and `notebooks/kaggle_eval_runner.ipynb` runs start to finish with "Save &
 question first, and that is what the table, retrieval and the answer model see. If the rewrite fails, or
 adds a shipment ID or product code nobody mentioned, the question is used as written. A question with no
 conversation makes no extra call and produces exactly the same prompt as before.
+
+The rewriter can be local (`REWRITE_PROVIDER=ollama`) or Gemini (`REWRITE_PROVIDER=gemini`), which needs no
+local LLM. It is off by default. A live call on `gemini-3.5-flash-lite` turned "What corrective action was
+taken?" into "What corrective action was taken for shipment SH-2024-007?". The results below are for the
+local model only.
 
 | First run: 14 follow-ups in `data/eval/followups.json`, local `qwen2.5:7b` | Result |
 |---|---|
@@ -268,10 +314,10 @@ src/shipment_rag/   config, ingestion/, embeddings, vectorstore, retrieval, stru
 ui/                 Streamlit front end (separate image)
 data/docs/          knowledge base (source of truth for the index)
 data/eval/          evaluation sets; reports/ holds generated eval reports
-scripts/            secret scanner, retrieval experiments
+scripts/            demo.ps1 (laptop demo), secret scanner, retrieval and eval helpers
 assets/             screenshots
 tests/              unit + API tests (no models / network needed)
-notebooks/          original Colab prototype, kept for reference
+notebooks/          Colab and Kaggle eval runners, original prototype
 ```
 
 All configuration is via environment variables — see `.env.example`.

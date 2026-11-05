@@ -5,7 +5,7 @@
 
 | | |
 |---|---|
-| **Current version** | 0.3.2 |
+| **Current version** | 0.4.0 |
 | **Current phase** | Stage 2 (generation eval) in progress: answer model switched to `gemini-3.5-flash-lite`, so all 26 golden questions are scored again, on the Colab or Kaggle runner. No generation numbers yet |
 | **Branches** | PRs #1, #2 and #3 merged into `main`; `stage-2-generation-eval` (local); `stage-3-structured-query` (stacked on Stage 2); `stage-4-streaming-followups` (stacked on Stage 3). All three are on GitHub as backup only, with no PRs |
 | **Last updated** | 2026-11-05 |
@@ -31,7 +31,7 @@ LLM answer **only** from those passages, with citations, refusing anything out o
 | `vendor_list.txt` | 4 vendors with SLAs, on-time rates, ratings, escalation matrix |
 | `incident_report_2024.txt` | RCA + CAPA for the 2 temperature breaches |
 
-## 2. Current architecture (v0.3.0)
+## 2. Current architecture (v0.4.0)
 
 ```
 Streamlit UI (ui/)  ──HTTP + X-API-Key──▶  FastAPI (/v1/query)  ──▶  Gemini (google-genai)
@@ -138,6 +138,14 @@ raised, later steps that depend on it are skipped, and the last step always writ
 `/kaggle/working/kaggle_results_<time>.zip` with the failures listed in `run_info.json`. **It has never
 run on Kaggle either.** Offline tests cover its file structure, step logic, zip, key check and restore. 337 tests pass; 17 of 17
 deliberate breaks to the notebook were caught.
+
+**Demo setup and v0.4.0, 2026-11-05.** `scripts/demo.ps1` starts the API and UI with no Docker or Ollama.
+Rewriting is off by default; `-FollowUps` uses the Gemini rewriter. Version 0.4.0 covers Stages 2-4, with
+Stage 2 still marked partial. Live calls with no local models loaded, both on `gemini-3.5-flash-lite`:
+streaming returned a correct, cited answer in 1.7 s, and the rewriter produced "What corrective action was
+taken for shipment SH-2024-007?". The table demo answers were run for real (650 vials; 2 breaches).
+**Not confirmed:** the API and UI together, because free RAM stayed under the 6 GB rule and the API loads MiniLM and the
+reranker. `scripts/demo.ps1 -Check` ran. Starting the demo has not.
 
 **Not verified**
 1. **Whether rewriting fixes the paraphrase weakness (D5).** That part of `scripts/eval_rewrite.py` was
@@ -660,6 +668,7 @@ Priority: **P0** = before anyone outside the team uses it, **P1** = next, **P2**
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-05 | Merge main into the later stage branches instead of rebasing (owner allowed either) | Each PR is squash-merged anyway, and no remote history gets rewritten |
 | 2026-11-05 | Answer model `gemini-3.5-flash-lite` for Stage 2 and as the default (owner decision) | `gemini-3.8-flash` returned 503 on every try; flash-lite gave a complete, cited live answer. Results name the model measured |
 | 2026-11-02 | Local `qwen2.5:7b` judge via Ollama (owner decision) | Free-tier Gemini was too unreliable to judge with; no quota, and independent of the answer model |
 | 2026-11-02 | Check citations one at a time, NLI at 0.9 minimum entailment (owner decision) | The judge could not match `[n]` to passages; NLI is about 200x faster with no false alarms on the hand-written cases. False alarms on real chunks are open (D9) |
