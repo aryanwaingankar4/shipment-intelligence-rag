@@ -8,6 +8,7 @@ from shipment_rag.evaluation.citation_check import LLMSupportChecker, NLISupport
 from shipment_rag.llm import GeminiLLM, OllamaLLM
 from shipment_rag.pipeline import RAGPipeline
 from shipment_rag.retrieval import Retriever
+from shipment_rag.rewrite import QueryRewriter
 from shipment_rag.structured.router import StructuredRouter
 from shipment_rag.structured.store import ShipmentStore
 from shipment_rag.vectorstore import get_collection
@@ -82,6 +83,30 @@ def build_structured_router(settings: Settings) -> StructuredRouter | None:
         return None
 
 
+# One attempt lost 3 of 9 live rewrites to brief 503s, each silently answering the wrong question.
+REWRITE_ATTEMPTS = 3
+
+
+def build_rewriter(settings: Settings) -> QueryRewriter | None:
+    """None when rewriting is off. Short limits: a person is waiting for this call."""
+    if settings.rewrite_provider == "off":
+        return None
+    if settings.rewrite_provider == "ollama":
+        if not settings.rewrite_model:
+            raise RuntimeError("REWRITE_PROVIDER=ollama needs REWRITE_MODEL, e.g. qwen2.5:7b")
+        llm = OllamaLLM(model=settings.rewrite_model, base_url=settings.ollama_base_url,
+                        max_output_tokens=128, num_ctx=2048,
+                        timeout_s=settings.rewrite_timeout_s)
+    else:
+        if settings.gemini_api_key is None or not settings.gemini_api_key.get_secret_value():
+            raise RuntimeError("GEMINI_API_KEY is not set")
+        llm = GeminiLLM(api_key=settings.gemini_api_key.get_secret_value(),
+                        model=settings.rewrite_model or settings.gemini_model,
+                        temperature=0.0, max_output_tokens=512, max_retries=REWRITE_ATTEMPTS,
+                        timeout_s=settings.rewrite_timeout_s, thinking_level="low")
+    return QueryRewriter(llm, max_messages=settings.rewrite_max_messages)
+
+
 def build_pipeline(
     settings: Settings, retriever: Retriever | None = None, llm=None
 ) -> RAGPipeline:
@@ -91,4 +116,6 @@ def build_pipeline(
         company=settings.company_name,
         assistant=settings.assistant_name,
         structured=build_structured_router(settings),
+        rewriter=build_rewriter(settings),
+        rewrite_every_question=settings.rewrite_every_question,
     )

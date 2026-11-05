@@ -31,6 +31,13 @@ class FakeLLM:
             raise self.exc
         return self.reply
 
+    def generate_stream(self, system, prompt):
+        self.calls.append((system, prompt))
+        if self.exc:
+            raise self.exc
+        words = self.reply.split(" ")
+        yield from (w if i == 0 else f" {w}" for i, w in enumerate(words))
+
 
 @pytest.fixture
 def chunk():

@@ -36,3 +36,4 @@ class RAGAnswer:
     llm_called: bool = False  # False when refused at retrieval or answered from the table
     route: str = "documents"  # which path answered: "documents" or "shipment_table"
     structured_query: dict | None = None  # the template, params and rows behind a table answer
+    rewritten_question: str | None = None  # set only if a rewrite changed what was searched for

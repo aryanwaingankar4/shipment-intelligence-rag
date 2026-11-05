@@ -5,8 +5,10 @@ The old `google-generativeai` package used in the Colab notebook is deprecated;
 `google-genai` is its supported successor.
 """
 
+import json
 import logging
 import time
+from collections.abc import Iterator
 from typing import Protocol
 
 import httpx
@@ -75,6 +77,8 @@ class ModelNotFoundError(LLMUnavailableError):
 class LLM(Protocol):
     def generate(self, system: str, prompt: str, json_schema: dict | None = None) -> str: ...
 
+    def generate_stream(self, system: str, prompt: str) -> Iterator[str]: ...
+
 
 def _is_transient(exc: BaseException) -> bool:
     from google.genai import errors
@@ -131,7 +135,7 @@ class GeminiLLM:
             )
         else:
             self._thinking = None
-        self._call = retry(
+        self._retry = retry(
             retry=retry_if_exception(_is_transient),
             stop=stop_after_attempt(max_retries),
             wait=wait_exponential_jitter(initial=2, max=30),
@@ -139,7 +143,8 @@ class GeminiLLM:
                 "llm transient error, retrying", extra={"attempt": rs.attempt_number}
             ),
             reraise=True,
-        )(self._generate_once)
+        )
+        self._call = self._retry(self._generate_once)
 
     def check_model(self) -> None:
         """Fail fast at startup if GEMINI_MODEL doesn't exist (costs no generation quota)."""
@@ -148,7 +153,9 @@ class GeminiLLM:
         except Exception as exc:
             if _is_not_found(exc):
                 raise ModelNotFoundError(self.model) from exc
-            raise
+            raise LLMUnavailableError(
+                f"could not check Gemini model {self.model} ({type(exc).__name__})"
+            ) from exc
 
     def list_models(self) -> list[str]:
         return sorted(
@@ -162,22 +169,23 @@ class GeminiLLM:
         return {"model": self.model, "temperature": self.temperature,
                 "max_output_tokens": self.max_output_tokens, "thinking": self._thinking_desc}
 
-    def _generate_once(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
+    def _config(self, system: str, json_schema: dict | None = None):
         json_cfg = (
             {"response_mime_type": "application/json", "response_json_schema": json_schema}
             if json_schema else {}
         )
+        return self._types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=self.temperature,
+            max_output_tokens=self.max_output_tokens,
+            thinking_config=self._thinking,
+            **json_cfg,
+        )
+
+    def _generate_once(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
         t0 = time.perf_counter()
         resp = self._client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=self._types.GenerateContentConfig(
-                system_instruction=system,
-                temperature=self.temperature,
-                max_output_tokens=self.max_output_tokens,
-                thinking_config=self._thinking,
-                **json_cfg,
-            ),
+            model=self.model, contents=prompt, config=self._config(system, json_schema)
         )
         self._record_usage(resp, time.perf_counter() - t0)
         self._warn_if_truncated(resp)
@@ -213,23 +221,55 @@ class GeminiLLM:
         try:
             text = self._call(system, prompt, json_schema)
         except Exception as exc:
-            if _is_not_found(exc):
-                log.error("llm model not found", extra={"model": self.model})
-                raise ModelNotFoundError(self.model) from exc
-            if _is_long_quota(exc):
-                delay = _retry_delay_s(exc)
-                hours = f"; resets in ~{delay / 3600:.1f} h" if delay else ""
-                quota = _quota_desc(exc)
-                hours += f"; quota {quota}" if quota else ""
-                log.error("llm quota exhausted", extra={"model": self.model})
-                raise QuotaExhaustedError(
-                    f"Gemini quota exhausted for {self.model} (HTTP 429){hours}"
-                ) from exc
-            log.exception("llm call failed")
-            raise LLMUnavailableError(str(exc)) from exc
+            raise self._unavailable(exc) from exc
         if not text:
             raise LLMUnavailableError("empty response from model")
         return text
+
+    def _open_stream(self, system: str, prompt: str):
+        """Start a stream and read its first chunk, which is when a failed request shows up."""
+        stream = iter(self._client.models.generate_content_stream(
+            model=self.model, contents=prompt, config=self._config(system)
+        ))
+        return stream, next(stream, None)
+
+    def generate_stream(self, system: str, prompt: str) -> Iterator[str]:
+        """Yield the answer as it is written. Retries only before the first chunk: after that
+        the reader has seen part of the answer, so a failure has to surface as a failure."""
+        t0 = time.perf_counter()
+        last, produced = None, False
+        try:
+            stream, chunk = self._retry(self._open_stream)(system, prompt)
+            while chunk is not None:
+                last = chunk
+                if chunk.text:
+                    produced = True
+                    yield chunk.text
+                chunk = next(stream, None)
+        except Exception as exc:
+            raise self._unavailable(exc) from exc
+        if last is not None:
+            self._record_usage(last, time.perf_counter() - t0)
+            self._warn_if_truncated(last)
+        if not produced:
+            raise LLMUnavailableError("empty response from model")
+
+    def _unavailable(self, exc: Exception) -> LLMUnavailableError:
+        """The error a caller should see for a failed Gemini call."""
+        if _is_not_found(exc):
+            log.error("llm model not found", extra={"model": self.model})
+            return ModelNotFoundError(self.model)
+        if _is_long_quota(exc):
+            delay = _retry_delay_s(exc)
+            hours = f"; resets in ~{delay / 3600:.1f} h" if delay else ""
+            quota = _quota_desc(exc)
+            hours += f"; quota {quota}" if quota else ""
+            log.error("llm quota exhausted", extra={"model": self.model})
+            return QuotaExhaustedError(
+                f"Gemini quota exhausted for {self.model} (HTTP 429){hours}"
+            )
+        log.exception("llm call failed")
+        return LLMUnavailableError(str(exc))
 
 
 class OllamaLLM:
@@ -291,15 +331,18 @@ class OllamaLLM:
                 "temperature": self.temperature, "max_output_tokens": self.max_output_tokens,
                 "num_ctx": self.num_ctx, "seed": self.seed}
 
-    def generate(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
-        body = {
+    def _body(self, system: str, prompt: str, stream: bool) -> dict:
+        return {
             "model": self.model,
-            "stream": False,
+            "stream": stream,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": prompt}],
             "options": {"temperature": self.temperature, "seed": self.seed,
                         "num_predict": self.max_output_tokens, "num_ctx": self.num_ctx},
         }
+
+    def generate(self, system: str, prompt: str, json_schema: dict | None = None) -> str:
+        body = self._body(system, prompt, stream=False)
         if json_schema:
             body["format"] = json_schema
         t0 = time.perf_counter()
@@ -309,8 +352,50 @@ class OllamaLLM:
         if resp.status_code >= 400:
             raise LLMUnavailableError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
+        self._check_finished(data, time.perf_counter() - t0)
+        text = ((data.get("message") or {}).get("content") or "").strip()
+        if not text:
+            raise LLMUnavailableError("empty response from model")
+        return text
 
-        seconds = time.perf_counter() - t0
+    def generate_stream(self, system: str, prompt: str) -> Iterator[str]:
+        """Yield the reply as Ollama writes it. A reply that turns out to be cut off raises
+        at the end, so it is never reported as a complete answer."""
+        t0 = time.perf_counter()
+        produced = False
+        try:
+            with self._client.stream(
+                "POST", "/api/chat", json=self._body(system, prompt, stream=True)
+            ) as resp:
+                if resp.status_code == 404:
+                    raise self._not_pulled()
+                if resp.status_code >= 400:
+                    resp.read()
+                    raise LLMUnavailableError(
+                        f"Ollama HTTP {resp.status_code}: {resp.text[:200]}"
+                    )
+                for line in resp.iter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    if data.get("error"):
+                        raise LLMUnavailableError(f"Ollama error: {str(data['error'])[:200]}")
+                    piece = (data.get("message") or {}).get("content") or ""
+                    if piece:
+                        produced = True
+                        yield piece
+                    if data.get("done"):
+                        self._check_finished(data, time.perf_counter() - t0)
+        except httpx.HTTPError as exc:
+            raise LLMUnavailableError(
+                f"Ollama not reachable at {self.base_url} ({type(exc).__name__}). "
+                "Is it running?"
+            ) from exc
+        if not produced:
+            raise LLMUnavailableError("empty response from model")
+
+    def _check_finished(self, data: dict, seconds: float) -> None:
+        """Record usage from Ollama's final message and reject a damaged reply."""
         prompt_tokens = data.get("prompt_eval_count", 0) or 0
         self.usage["calls"] += 1
         self.usage["seconds"] = round(self.usage["seconds"] + seconds, 1)
@@ -326,7 +411,3 @@ class OllamaLLM:
             raise LLMUnavailableError(
                 f"prompt of {prompt_tokens} tokens may not fit num_ctx={self.num_ctx}"
             )
-        text = ((data.get("message") or {}).get("content") or "").strip()
-        if not text:
-            raise LLMUnavailableError("empty response from model")
-        return text

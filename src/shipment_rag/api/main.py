@@ -5,6 +5,7 @@ Models are loaded once per worker process at startup, not per request.
 """
 
 import hmac
+import json
 import logging
 import time
 import uuid
@@ -13,20 +14,31 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from shipment_rag import __version__
 from shipment_rag.config import Settings, get_settings
 from shipment_rag.llm import LLMUnavailableError
 from shipment_rag.logging_config import configure_logging
+from shipment_rag.models import RAGAnswer
 from shipment_rag.pipeline import RAGPipeline
 
 log = logging.getLogger("shipment_rag.api")
+
+UNAVAILABLE = "The assistant is temporarily unavailable."
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=8000)
 
 
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
     custom_instructions: str = Field("", max_length=500)
+    # Earlier messages, oldest first. The client keeps them: the server stores no conversations.
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
 
 
 class SourceOut(BaseModel):
@@ -52,6 +64,33 @@ class QueryResponse(BaseModel):
     request_id: str
     route: Literal["documents", "shipment_table"]  # which path answered
     structured_query: StructuredQueryOut | None = None
+    rewritten_question: str | None = None  # what was searched for, if a rewrite changed it
+
+
+def _response(result: RAGAnswer, request_id: str) -> QueryResponse:
+    return QueryResponse(
+        answer=result.answer,
+        refused=result.refused,
+        sources=[
+            SourceOut(
+                source=c.source,
+                section=c.section,
+                rerank_score=c.rerank_score,
+                snippet=c.text[:240],
+            )
+            for c in result.sources
+        ],
+        latency_ms=result.latency_ms,
+        request_id=request_id,
+        route=result.route,
+        structured_query=result.structured_query,
+        rewritten_question=result.rewritten_question,
+    )
+
+
+def _sse(event: str, data: dict) -> str:
+    # json.dumps keeps it on one line, so a newline in the answer can't break the framing
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def create_app(settings: Settings | None = None, pipeline: RAGPipeline | None = None) -> FastAPI:
@@ -131,30 +170,49 @@ def create_app(settings: Settings | None = None, pipeline: RAGPipeline | None = 
     @app.post("/v1/query", response_model=QueryResponse, dependencies=[Depends(require_api_key)])
     def query(body: QueryRequest, request: Request):
         rid = request.state.request_id
+        history = [m.model_dump() for m in body.history]
         try:
             result = request.app.state.pipeline.answer(
-                body.question, body.custom_instructions, request_id=rid
+                body.question, body.custom_instructions, request_id=rid, history=history
             )
         except LLMUnavailableError as exc:
-            raise HTTPException(
-                status_code=503, detail="The assistant is temporarily unavailable."
-            ) from exc
-        return QueryResponse(
-            answer=result.answer,
-            refused=result.refused,
-            sources=[
-                SourceOut(
-                    source=c.source,
-                    section=c.section,
-                    rerank_score=c.rerank_score,
-                    snippet=c.text[:240],
-                )
-                for c in result.sources
-            ],
-            latency_ms=result.latency_ms,
-            request_id=rid,
-            route=result.route,
-            structured_query=result.structured_query,
+            raise HTTPException(status_code=503, detail=UNAVAILABLE) from exc
+        return _response(result, rid)
+
+    @app.post("/v1/query/stream", dependencies=[Depends(require_api_key)])
+    def query_stream(body: QueryRequest, request: Request):
+        """The same answer as /v1/query, sent as server-sent events while it is written.
+
+        Events: `start` {route, rewritten_question, request_id}, then `delta` {text} pieces, then
+        `done` with the full /v1/query response, or `error` {detail} instead of `done`. The status
+        is already 200 by the time a model fails, so only `done` means the answer is complete.
+        """
+        rid = request.state.request_id
+        history = [m.model_dump() for m in body.history]
+        pipeline = request.app.state.pipeline
+
+        # a sync generator: Starlette runs it in a threadpool, so inference doesn't block the loop
+        def events():
+            try:
+                for kind, data in pipeline.answer_stream(
+                    body.question, body.custom_instructions, request_id=rid, history=history
+                ):
+                    if kind == "start":
+                        yield _sse("start", {**data, "request_id": rid})
+                    elif kind == "delta":
+                        yield _sse("delta", {"text": data})
+                    else:
+                        yield _sse("done", _response(data, rid).model_dump())
+            except LLMUnavailableError:
+                yield _sse("error", {"detail": UNAVAILABLE, "request_id": rid})
+            except Exception:
+                log.exception("stream failed", extra={"request_id": rid})
+                yield _sse("error", {"detail": UNAVAILABLE, "request_id": rid})
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     return app

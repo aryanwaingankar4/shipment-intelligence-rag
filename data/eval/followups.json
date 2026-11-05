@@ -1,0 +1,104 @@
+[
+  {"id": "F01", "history": [
+    {"role": "user", "content": "Why was SH-2024-003 quarantined?"},
+    {"role": "assistant", "content": "It exceeded 10°C for 3 hours because the PCM cold packs were not fully conditioned [1]."}],
+   "question": "What corrective action was decided?",
+   "expect_any": ["24-hour PCM conditioning"], "expect_sources": ["incident_report_2024.txt"],
+   "rewrite_must_contain": ["SH-2024-003"]},
+
+  {"id": "F02", "history": [
+    {"role": "user", "content": "What happened to SH-2024-007?"},
+    {"role": "assistant", "content": "The full batch was rejected and CDSCO was notified [1]."}],
+   "question": "Which vendor handled it?",
+   "expect_any": ["ArcticLine"], "expect_sources": ["incident_report_2024.txt", "vendor_list.txt"],
+   "rewrite_must_contain": ["SH-2024-007"]},
+
+  {"id": "F03", "history": [
+    {"role": "user", "content": "What is the storage condition for TL-FROZ-7700?"},
+    {"role": "assistant", "content": "-20°C or below [1]."}],
+   "question": "How long is its shelf life?",
+   "expect_any": ["18 months"], "expect_sources": ["product_manual.txt"],
+   "rewrite_must_contain": ["TL-FROZ-7700"]},
+
+  {"id": "F04", "history": [
+    {"role": "user", "content": "What is the excursion rule for TL-COLD-9001?"},
+    {"role": "assistant", "content": "Discard if exposed above 10°C for more than 2 continuous hours [1]."}],
+   "question": "And for TL-FROZ-7700?",
+   "expect_any": ["Automatically rejected"], "expect_sources": ["product_manual.txt"],
+   "rewrite_must_contain": ["TL-FROZ-7700"], "rewrite_must_not_contain": ["TL-COLD-9001"]},
+
+  {"id": "F05", "history": [
+    {"role": "user", "content": "Who is the contact person at ArcticLine?"},
+    {"role": "assistant", "content": "Rohan Mehta [1]."}],
+   "question": "What's their on-time delivery rate?",
+   "expect_any": ["88%"], "expect_sources": ["vendor_list.txt"],
+   "rewrite_must_contain": ["ArcticLine"]},
+
+  {"id": "F06", "history": [
+    {"role": "user", "content": "Which shipments had a temperature breach?"},
+    {"role": "assistant", "content": "SH-2024-003 and SH-2024-007 [1]."}],
+   "question": "What was the root cause of the second one?",
+   "expect_any": ["Insufficient dry ice"], "expect_sources": ["incident_report_2024.txt"],
+   "rewrite_must_contain": ["SH-2024-007"]},
+
+  {"id": "F07", "history": [
+    {"role": "user", "content": "Which shipments had a temperature breach?"},
+    {"role": "assistant", "content": "SH-2024-003 and SH-2024-007 [1]."},
+    {"role": "user", "content": "What was the root cause of SH-2024-003?"},
+    {"role": "assistant", "content": "The PCM cold packs were not fully conditioned before loading [1]."}],
+   "question": "And the other one?",
+   "expect_any": ["Insufficient dry ice"], "expect_sources": ["incident_report_2024.txt"],
+   "rewrite_must_contain": ["SH-2024-007"]},
+
+  {"id": "F08", "history": [
+    {"role": "user", "content": "What must happen when a shipment is delayed by more than 48 hours?"},
+    {"role": "assistant", "content": "QA must reassess product integrity before acceptance [1]."}],
+   "question": "What if the delay was caused by the truck breaking down?",
+   "expect_any": ["backup validated vehicle"], "expect_sources": ["compliance_guide.txt"],
+   "rewrite_must_contain": ["delay"]},
+
+  {"id": "F09", "history": [
+    {"role": "user", "content": "What is the penalty for falsifying temperature records?"},
+    {"role": "assistant", "content": "Termination plus legal action [1]."}],
+   "question": "And for not updating the shipment log on time?",
+   "expect_any": ["Rs. 5,000"], "expect_sources": ["compliance_guide.txt"],
+   "rewrite_must_contain": ["shipment log"]},
+
+  {"id": "F10", "note": "topic switch: the earlier product must not leak into the rewrite",
+   "history": [
+    {"role": "user", "content": "What is the shelf life of TL-COLD-9001?"},
+    {"role": "assistant", "content": "24 months from the date of manufacture [1]."}],
+   "question": "How many days does a customer have to return delivered goods?",
+   "expect_any": ["within 30 days"], "expect_sources": ["compliance_guide.txt"],
+   "rewrite_must_contain": ["return"], "rewrite_must_not_contain": ["TL-COLD-9001"]},
+
+  {"id": "F11", "note": "off-domain after a real conversation: must still be refused at retrieval",
+   "history": [
+    {"role": "user", "content": "Why was SH-2024-003 quarantined?"},
+    {"role": "assistant", "content": "It exceeded 10°C for 3 hours [1]."}],
+   "question": "What is the capital of France?",
+   "expect_refusal": true, "rewrite_must_not_contain": ["SH-2024-003"]},
+
+  {"id": "F12", "note": "should reach the shipment table once rewritten",
+   "history": [
+    {"role": "user", "content": "How many shipments were delivered?"},
+    {"role": "assistant", "content": "7 shipments were delivered."}],
+   "question": "And how many were rejected?",
+   "expect_any": ["REJECTED"], "expect_sources": ["shipment_log.txt"],
+   "rewrite_must_contain": ["rejected"], "expect_table_contains": "1 shipment"},
+
+  {"id": "F13", "history": [
+    {"role": "user", "content": "What is the status of SH-2024-005?"},
+    {"role": "assistant", "content": "It is DELAYED because of a truck breakdown [1]."}],
+   "question": "Who accepted it?",
+   "expect_any": ["Sandeep Arora"], "expect_sources": ["shipment_log.txt"],
+   "rewrite_must_contain": ["SH-2024-005"]},
+
+  {"id": "F14", "note": "no ID anywhere: the reference is a product name from the answer",
+   "history": [
+    {"role": "user", "content": "Which product must never be frozen?"},
+    {"role": "assistant", "content": "CryoVial Injectable Solution must not be frozen [1]."}],
+   "question": "Who supplies it?",
+   "expect_any": ["MedSupply India"], "expect_sources": ["product_manual.txt", "vendor_list.txt"],
+   "rewrite_must_contain": ["CryoVial"]}
+]
