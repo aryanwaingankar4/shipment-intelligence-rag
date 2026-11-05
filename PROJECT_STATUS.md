@@ -234,6 +234,13 @@ now runs on `gemini-3.5-flash-lite`, which is also the code default. What this m
 - **`eval-gen.yml` is manual only.** Runners have no Ollama, so it judges with Gemini and its
   numbers are not comparable with the README's.
 
+**Update 2026-11-05: still blocked by Gemini, no new answers.** Every `gemini-3.8-flash` attempt
+failed: 2026-11-04 12:46, 12 attempts, all 503 "high demand"; 12:47-13:19, 4 single tries, all failed
+(the error type was not recorded); 2026-11-05 01:46, 3 single attempts, all 503. None was a quota error, so this is
+an outage on the model and not the daily limit. The report was regenerated with the D9 method: G01-G04
+now score 3/4 on citation support (it said 2/4). It shows 22 of 26 unscored because the run stops
+after 3 failures in a row, before reaching G24; G24's refusal is unchanged. Still do not quote it.
+
 **Resume plan:** `shipment-rag eval-gen --report data/eval/reports/stage2_generation.md`.
 Calibration and the 4 generated answers come from cache; 21 questions remain, some of which are
 refused at retrieval and need no Gemini call. Then hand-label every cited sentence in the golden
